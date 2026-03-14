@@ -6,7 +6,8 @@ import {
   ArrowRight, Download, Trash2, FileDown, MoreHorizontal
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
-import { getUserDocuments, deleteDocument, type Document } from '@/lib/supabase'
+import { getUserDocuments, deleteDocument } from '@/lib/api'
+import type { Document } from '@/lib/supabase'
 import { Button } from '@/components/ui/Button'
 import { formatDate } from '@/lib/utils'
 

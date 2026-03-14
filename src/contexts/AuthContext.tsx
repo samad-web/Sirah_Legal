@@ -1,15 +1,13 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import type { User, Session } from '@supabase/supabase-js'
-import { supabase, type Profile, getProfile, upsertProfile } from '@/lib/supabase'
+import { supabase, type Profile } from '@/lib/supabase'
+import { getProfile, upsertProfile } from '@/lib/api'
 
 interface AuthContextType {
   user: User | null
   session: Session | null
   profile: Profile | null
   loading: boolean
-  role: 'lawyer' | 'client' | null
-  isLawyer: boolean
-  isClient: boolean
   signIn: (email: string, password: string) => Promise<void>
   signUp: (email: string, password: string, fullName: string) => Promise<void>
   signInWithGoogle: () => Promise<void>
@@ -92,10 +90,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProfile(updated)
   }
 
-  const role = profile?.role ?? null
-  const isLawyer = role === 'lawyer'
-  const isClient = role === 'client'
-
   return (
     <AuthContext.Provider
       value={{
@@ -103,9 +97,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         session,
         profile,
         loading,
-        role,
-        isLawyer,
-        isClient,
         signIn,
         signUp,
         signInWithGoogle,

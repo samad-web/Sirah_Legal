@@ -7,11 +7,10 @@ import {
 import { useAuth } from '@/contexts/AuthContext'
 import { generateDocument, type ContractAnalysis, type AnalysisClause } from '@/lib/generate'
 import { validateFile, extractTextFromFile } from '@/lib/file-extract'
-import { saveDocument, incrementDocumentCount } from '@/lib/supabase'
+import { saveDocument, incrementDocumentCount } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
-import { SelectionCard, FormField } from '@/components/ui/FormFields'
+import { SelectionCard } from '@/components/ui/FormFields'
 import { cn } from '@/lib/utils'
-import type { Language } from '@/lib/generate'
 
 type ReviewRole = 'vendor' | 'employee' | 'client' | 'company'
 
@@ -195,7 +194,6 @@ export default function ReviewContractPage() {
   const [activeTab, setActiveTab] = useState<string>('risk')
   const [error, setError] = useState('')
   const [extractedText, setExtractedText] = useState('')
-  const [language, setLanguage] = useState<Language>('en')
   const inputRef = useRef<HTMLInputElement>(null)
 
   const acceptFile = async (f: File) => {
@@ -248,7 +246,7 @@ export default function ReviewContractPage() {
       const result = await generateDocument(
         {
           module: 'contract-review',
-          language: language,
+          language: 'en',
           payload: {
             contractText: extractedText,
             reviewingAs: role,
@@ -267,7 +265,7 @@ export default function ReviewContractPage() {
             user_id: user.id,
             title: `Contract Review — ${file.name}`,
             type: 'contract-review',
-            language: language,
+            language: 'en',
             content: extractedText,
             analysis: result.analysis as unknown as Record<string, unknown>,
             status: 'draft',
@@ -396,29 +394,7 @@ export default function ReviewContractPage() {
           )}
 
           {file && role && (
-            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-              <FormField label="Analysis Language">
-                <div className="flex gap-0 max-w-sm mx-auto">
-                  {[
-                    { value: 'en', label: 'English' },
-                    { value: 'ta', label: 'Tamil' },
-                    { value: 'hi', label: 'Hindi' },
-                  ].map((ln) => (
-                    <button
-                      key={ln.value}
-                      onClick={() => setLanguage(ln.value as Language)}
-                      className={`flex-1 py-2 text-[12px] border transition-all ${language === ln.value
-                        ? 'bg-[#1B3A2D] border-[rgba(201,168,76,0.5)] text-[#F5EDD6]'
-                        : 'bg-[#161616] border-[rgba(201,168,76,0.2)] text-[rgba(250,247,240,0.5)] hover:text-[#FAF7F0]'
-                        }`}
-                      style={{ fontFamily: 'DM Mono, monospace' }}
-                    >
-                      {ln.label}
-                    </button>
-                  ))}
-                </div>
-              </FormField>
-
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
               <Button
                 variant="primary"
                 size="xl"

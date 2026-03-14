@@ -5,7 +5,6 @@ import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/Button'
 import { FormField, Input, Select, Textarea } from '@/components/ui/FormFields'
 import { INDIAN_STATES } from '@/lib/utils'
-import { supabase } from '@/lib/supabase'
 
 export default function SettingsPage() {
   const { profile, updateProfile } = useAuth()
@@ -18,11 +17,6 @@ export default function SettingsPage() {
     default_language: 'en',
     default_state: '',
     default_dispute: 'arbitration',
-    font_family: 'Times New Roman',
-    font_size: 12,
-    font_color: '#000000',
-    logo_url: '',
-    signature_url: '',
   })
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -38,35 +32,12 @@ export default function SettingsPage() {
         default_language: profile.default_language || 'en',
         default_state: profile.default_state || '',
         default_dispute: 'arbitration',
-        font_family: profile.font_family || 'Times New Roman',
-        font_size: profile.font_size || 12,
-        font_color: profile.font_color || '#000000',
-        logo_url: profile.logo_url || '',
-        signature_url: profile.signature_url || '',
       })
     }
   }, [profile])
 
-  const setField = (key: string, value: any) =>
+  const setField = (key: string, value: string) =>
     setForm(prev => ({ ...prev, [key]: value }))
-
-  const uploadAsset = async (file: File, type: 'logo' | 'signature') => {
-    if (!profile) return
-    const ext = file.name.split('.').pop()
-    const path = `${profile.id}/${type}_${Date.now()}.${ext}`
-
-    const { data, error } = await supabase.storage
-      .from('user-assets')
-      .upload(path, file, { upsert: true })
-
-    if (error) throw error
-
-    const { data: { publicUrl } } = supabase.storage
-      .from('user-assets')
-      .getPublicUrl(data.path)
-
-    setField(type === 'logo' ? 'logo_url' : 'signature_url', publicUrl)
-  }
 
   const handleSave = async () => {
     setSaving(true)
@@ -79,11 +50,6 @@ export default function SettingsPage() {
         office_address: form.office_address,
         default_language: form.default_language,
         default_state: form.default_state,
-        logo_url: form.logo_url,
-        signature_url: form.signature_url,
-        font_family: form.font_family,
-        font_size: Number(form.font_size),
-        font_color: form.font_color,
       })
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
@@ -153,54 +119,22 @@ export default function SettingsPage() {
             </FormField>
 
             {/* Letterhead upload */}
-            <FormField label="Letterhead Logo" hint="PNG or JPG · Transparent background recommended">
-              <div
-                className="upload-zone p-4 flex flex-col items-center justify-center gap-2 cursor-pointer relative overflow-hidden group"
-                onClick={() => document.getElementById('logo-upload')?.click()}
-              >
-                {form.logo_url ? (
-                  <img src={form.logo_url} alt="Logo" className="h-12 object-contain" />
-                ) : (
-                  <>
-                    <Upload size={16} className="text-[rgba(201,168,76,0.5)]" />
-                    <span className="text-[12px] text-[rgba(250,247,240,0.4)]" style={{ fontFamily: 'DM Mono, monospace' }}>
-                      UPLOAD LOGO
-                    </span>
-                  </>
-                )}
-                <input
-                  id="logo-upload"
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={e => e.target.files?.[0] && uploadAsset(e.target.files[0], 'logo')}
-                />
+            <FormField label="Letterhead Upload" hint="PNG or PDF · Used in exported documents">
+              <div className="upload-zone p-4 flex items-center justify-center gap-3 cursor-pointer">
+                <Upload size={16} className="text-[rgba(201,168,76,0.5)]" />
+                <span className="text-[12px] text-[rgba(250,247,240,0.4)]" style={{ fontFamily: 'DM Mono, monospace' }}>
+                  UPLOAD LETTERHEAD
+                </span>
               </div>
             </FormField>
 
             {/* Signature upload */}
-            <FormField label="Advocate Signature" hint="PNG with transparent background">
-              <div
-                className="upload-zone p-4 flex flex-col items-center justify-center gap-2 cursor-pointer relative overflow-hidden group"
-                onClick={() => document.getElementById('sig-upload')?.click()}
-              >
-                {form.signature_url ? (
-                  <img src={form.signature_url} alt="Signature" className="h-10 object-contain grayscale invert" />
-                ) : (
-                  <>
-                    <Upload size={16} className="text-[rgba(201,168,76,0.5)]" />
-                    <span className="text-[12px] text-[rgba(250,247,240,0.4)]" style={{ fontFamily: 'DM Mono, monospace' }}>
-                      UPLOAD SIGNATURE
-                    </span>
-                  </>
-                )}
-                <input
-                  id="sig-upload"
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={e => e.target.files?.[0] && uploadAsset(e.target.files[0], 'signature')}
-                />
+            <FormField label="Signature Upload" hint="Optional · PNG with transparent background">
+              <div className="upload-zone p-4 flex items-center justify-center gap-3 cursor-pointer">
+                <Upload size={16} className="text-[rgba(201,168,76,0.5)]" />
+                <span className="text-[12px] text-[rgba(250,247,240,0.4)]" style={{ fontFamily: 'DM Mono, monospace' }}>
+                  UPLOAD SIGNATURE
+                </span>
               </div>
             </FormField>
           </div>
@@ -225,10 +159,11 @@ export default function SettingsPage() {
                   <button
                     key={v}
                     onClick={() => setField('default_language', v)}
-                    className={`flex-1 py-2.5 text-[12px] border transition-all ${form.default_language === v
-                      ? 'bg-[#1B3A2D] border-[rgba(201,168,76,0.5)] text-[#F5EDD6]'
-                      : 'bg-[#161616] border-[rgba(201,168,76,0.2)] text-[rgba(250,247,240,0.5)] hover:text-[#FAF7F0]'
-                      }`}
+                    className={`flex-1 py-2.5 text-[12px] border transition-all ${
+                      form.default_language === v
+                        ? 'bg-[#1B3A2D] border-[rgba(201,168,76,0.5)] text-[#F5EDD6]'
+                        : 'bg-[#161616] border-[rgba(201,168,76,0.2)] text-[rgba(250,247,240,0.5)] hover:text-[#FAF7F0]'
+                    }`}
                     style={{ fontFamily: 'DM Mono, monospace' }}
                   >
                     {l}
@@ -256,10 +191,11 @@ export default function SettingsPage() {
                   <button
                     key={v}
                     onClick={() => setField('default_dispute', v)}
-                    className={`w-full text-left px-4 py-2.5 text-[12px] border transition-all ${form.default_dispute === v
+                    className={`w-full text-left px-4 py-2.5 text-[12px] border transition-all ${
+                      form.default_dispute === v
                         ? 'bg-[#1B3A2D] border-[rgba(201,168,76,0.4)] text-[#F5EDD6]'
                         : 'bg-[#161616] border-[rgba(201,168,76,0.15)] text-[rgba(250,247,240,0.5)] hover:text-[#FAF7F0]'
-                      }`}
+                    }`}
                     style={{ fontFamily: 'DM Mono, monospace' }}
                   >
                     {l}
@@ -267,54 +203,6 @@ export default function SettingsPage() {
                 ))}
               </div>
             </FormField>
-
-            <div className="gold-line-solid my-6" />
-
-            <div className="mb-5">
-              <p className="text-[11px] tracking-widest text-[rgba(201,168,76,0.7)]" style={{ fontFamily: 'DM Mono, monospace' }}>
-                EXPORT STYLING (COURT FORMAT)
-              </p>
-            </div>
-
-            <FormField label="Font Family">
-              <Select
-                value={form.font_family}
-                onChange={e => setField('font_family', e.target.value)}
-                options={[
-                  { value: 'Times New Roman', label: 'Times New Roman (Standard)' },
-                  { value: 'Helvetica', label: 'Helvetica / Sans' },
-                  { value: 'Georgia', label: 'Georgia / Serif' },
-                  { value: 'Courier New', label: 'Courier New (Drafting)' },
-                ]}
-              />
-            </FormField>
-
-            <div className="grid grid-cols-2 gap-4">
-              <FormField label="Font Size (pt)">
-                <Input
-                  type="number"
-                  value={form.font_size}
-                  onChange={e => setField('font_size', e.target.value)}
-                  min={10}
-                  max={16}
-                />
-              </FormField>
-              <FormField label="Font Color">
-                <div className="flex gap-2">
-                  <Input
-                    type="color"
-                    value={form.font_color}
-                    onChange={e => setField('font_color', e.target.value)}
-                    className="w-12 h-10 p-1"
-                  />
-                  <Input
-                    value={form.font_color}
-                    onChange={e => setField('font_color', e.target.value)}
-                    placeholder="#000000"
-                  />
-                </div>
-              </FormField>
-            </div>
 
             <div className="gold-line-solid my-4" />
 
@@ -325,10 +213,11 @@ export default function SettingsPage() {
                   CURRENT PLAN
                 </p>
                 <span
-                  className={`text-[10px] border px-2 py-0.5 ${profile?.plan === 'free'
-                    ? 'text-[rgba(250,247,240,0.5)] border-[rgba(250,247,240,0.15)]'
-                    : 'text-[#C9A84C] border-[rgba(201,168,76,0.4)]'
-                    }`}
+                  className={`text-[10px] border px-2 py-0.5 ${
+                    profile?.plan === 'free'
+                      ? 'text-[rgba(250,247,240,0.5)] border-[rgba(250,247,240,0.15)]'
+                      : 'text-[#C9A84C] border-[rgba(201,168,76,0.4)]'
+                  }`}
                   style={{ fontFamily: 'DM Mono, monospace' }}
                 >
                   {(profile?.plan || 'FREE').toUpperCase()}

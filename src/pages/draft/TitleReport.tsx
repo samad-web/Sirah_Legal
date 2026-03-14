@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { MapPin, Upload, CheckCircle, AlertTriangle, FileText } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { generateDocument, type Language } from '@/lib/generate'
-import { saveDocument, incrementDocumentCount } from '@/lib/supabase'
+import { saveDocument, incrementDocumentCount } from '@/lib/api'
 import { exportToPdf } from '@/lib/pdf-export'
 import { exportToDocx } from '@/lib/docx-export'
 import { DocumentPreview } from '@/components/ui/DocumentPreview'
@@ -154,7 +154,7 @@ export default function TitleReportPage() {
           (chunk) => setDocuments(prev => ({ ...prev, [lang]: chunk }))
         )
         if (result.document) {
-          setDocuments(prev => ({ ...prev, [lang]: result.document as string }))
+          setDocuments(prev => ({ ...prev, [lang]: result.document }))
           if (user) {
             saveDocument({
               user_id: user.id, title, type: 'title-report', language: lang,
@@ -377,10 +377,11 @@ export default function TitleReportPage() {
               <button
                 key={lang}
                 onClick={() => setActiveDocLang(lang)}
-                className={`px-4 py-2 text-[11px] tracking-widest border-r border-[rgba(201,168,76,0.15)] transition-all ${activeDocLang === lang
+                className={`px-4 py-2 text-[11px] tracking-widest border-r border-[rgba(201,168,76,0.15)] transition-all ${
+                  activeDocLang === lang
                     ? 'bg-[#1B3A2D] text-[#F5EDD6]'
                     : 'text-[rgba(250,247,240,0.4)] hover:text-[#FAF7F0]'
-                  }`}
+                }`}
                 style={{ fontFamily: 'DM Mono, monospace' }}
               >
                 {lang === 'en' ? 'ENGLISH' : lang === 'ta' ? 'TAMIL' : 'HINDI'}

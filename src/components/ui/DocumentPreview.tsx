@@ -21,7 +21,6 @@ interface DocumentPreviewProps {
   onRegenerateSection?: (section: string) => void
   isRegenerating?: string | null
   className?: string
-  language?: string
 }
 
 function useTypewriterReveal(content: string, isGenerating: boolean) {
@@ -40,27 +39,22 @@ function useTypewriterReveal(content: string, isGenerating: boolean) {
   return { displayedContent, lines }
 }
 
-function renderDocumentLine(line: string, index: number, language?: string) {
-  // Script-agnostic heading: All caps + some punctuation, or specific patterns in other scripts
-  // For Tamil/Hindi, we rely on the LLM's structure or specific markers if added.
-  // We'll keep the Latin caps check but make it less restrictive if it's a short line.
-  const isHeading = line.match(/^[A-Z][A-Z\s\-:]{5,}$/) || (line.length < 50 && line === line.toUpperCase() && line.trim().length > 3)
-  const isSubHeading = line.match(/^[A-Z][A-Za-z\s]+:$/) || line.trim().endsWith(':')
-  const isClauseNum = line.match(/^(\d+\.?\d*|[a-zA-Z]\.)\s/)
-  const isSignature = line.toLowerCase().includes('yours faithfully') ||
-    line.toLowerCase().includes('yours sincerely') ||
-    line.toLowerCase().includes('advocate for') ||
-    line.toLowerCase().includes('signature') ||
-    line.includes('இப்படிக்கு') || // Tamil: "Yours faithfully"
-    line.includes('தங்கள் உண்மையுள்ள') // Tamil: "Yours truly"
-  const isDisclaimer = line.toLowerCase().includes('disclaimer:') || line.includes('பொறுப்புத் துறப்பு:')
+function renderDocumentLine(line: string, index: number) {
+  const isHeading = line.match(/^[A-Z][A-Z\s\-:]{5,}$/)
+  const isSubHeading = line.match(/^[A-Z][A-Za-z\s]+:$/)
+  const isClauseNum = line.match(/^\d+\.\d*\s/)
+  const isSignature = line.toLowerCase().includes('yours faithfully') || 
+                      line.toLowerCase().includes('yours sincerely') ||
+                      line.toLowerCase().includes('advocate for') ||
+                      line.toLowerCase().includes('signature')
+  const isDisclaimer = line.toLowerCase().includes('disclaimer:')
 
   if (isHeading) {
     return (
       <p
         key={index}
         className="text-[13px] font-bold tracking-[0.08em] mt-6 mb-2 text-[#1a1208] uppercase"
-        style={{ fontFamily: language === 'ta' ? 'Noto Serif Tamil, serif' : 'DM Mono, monospace' }}
+        style={{ fontFamily: 'DM Mono, monospace' }}
       >
         {line}
       </p>
@@ -72,7 +66,7 @@ function renderDocumentLine(line: string, index: number, language?: string) {
       <p
         key={index}
         className="text-[15px] font-semibold mt-4 mb-1 text-[#1a1208]"
-        style={{ fontFamily: language === 'ta' ? 'Noto Serif Tamil, serif' : 'Cormorant Garamond, serif' }}
+        style={{ fontFamily: 'Cormorant Garamond, serif' }}
       >
         {line}
       </p>
@@ -84,7 +78,7 @@ function renderDocumentLine(line: string, index: number, language?: string) {
       <p
         key={index}
         className="text-[13px] my-2 text-[#1a1208] pl-4"
-        style={{ fontFamily: language === 'ta' ? 'Noto Serif Tamil, serif' : 'Cormorant Garamond, serif', lineHeight: '1.8' }}
+        style={{ fontFamily: 'Cormorant Garamond, serif', lineHeight: '1.8' }}
       >
         {line}
       </p>
@@ -96,7 +90,7 @@ function renderDocumentLine(line: string, index: number, language?: string) {
       <p
         key={index}
         className="text-[13px] mt-6 mb-1 text-[#1a1208]"
-        style={{ fontFamily: language === 'ta' ? 'Noto Serif Tamil, serif' : 'Cormorant Garamond, serif', fontStyle: 'italic' }}
+        style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic' }}
       >
         {line}
       </p>
@@ -108,7 +102,7 @@ function renderDocumentLine(line: string, index: number, language?: string) {
       <p
         key={index}
         className="text-[11px] mt-8 pt-3 border-t border-[rgba(26,18,8,0.2)] text-[rgba(26,18,8,0.55)] italic"
-        style={{ fontFamily: language === 'ta' ? 'Noto Serif Tamil, serif' : 'Lora, serif' }}
+        style={{ fontFamily: 'Lora, serif' }}
       >
         {line}
       </p>
@@ -123,7 +117,7 @@ function renderDocumentLine(line: string, index: number, language?: string) {
     <p
       key={index}
       className="text-[13px] my-1.5 text-[#1a1208]"
-      style={{ fontFamily: language === 'ta' ? 'Noto Serif Tamil, serif' : 'Cormorant Garamond, serif', lineHeight: '1.85' }}
+      style={{ fontFamily: 'Cormorant Garamond, serif', lineHeight: '1.85' }}
     >
       {line}
     </p>
@@ -149,7 +143,6 @@ export function DocumentPreview({
   onRegenerateSection,
   isRegenerating,
   className,
-  language,
 }: DocumentPreviewProps) {
   const [copied, setCopied] = useState(false)
   const [showSectionMenu, setShowSectionMenu] = useState(false)
@@ -230,7 +223,7 @@ export function DocumentPreview({
                     autoFocus
                     className="w-full text-[13px] bg-transparent border border-[#C9A84C] text-[#1a1208] p-1 resize-none outline-none"
                     style={{
-                      fontFamily: language === 'ta' ? 'Noto Serif Tamil, serif' : 'Cormorant Garamond, serif',
+                      fontFamily: 'Cormorant Garamond, serif',
                       lineHeight: '1.85',
                       minHeight: '2em',
                     }}
@@ -248,7 +241,7 @@ export function DocumentPreview({
                   onDoubleClick={() => setEditingLine(index)}
                   className="cursor-text group relative"
                 >
-                  {renderDocumentLine(displayLine, index, language)}
+                  {renderDocumentLine(displayLine, index)}
                   <span className="absolute right-0 top-1 opacity-0 group-hover:opacity-50 transition-opacity">
                     <Edit3 size={10} className="text-[#8b7355]" />
                   </span>

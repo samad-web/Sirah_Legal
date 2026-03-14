@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Feather, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { generateDocument, type Language } from '@/lib/generate'
-import { saveDocument, incrementDocumentCount } from '@/lib/supabase'
+import { saveDocument, incrementDocumentCount } from '@/lib/api'
 import { exportToPdf } from '@/lib/pdf-export'
 import { exportToDocx } from '@/lib/docx-export'
 import { DocumentPreview } from '@/components/ui/DocumentPreview'
@@ -152,7 +152,7 @@ export default function DraftNoticePage() {
           (chunk) => setDocuments(prev => ({ ...prev, [lang]: chunk }))
         )
         if (result.document) {
-          setDocuments(prev => ({ ...prev, [lang]: result.document as string }))
+          setDocuments(prev => ({ ...prev, [lang]: result.document }))
           if (user) {
             saveDocument({
               user_id: user.id,
@@ -386,10 +386,11 @@ export default function DraftNoticePage() {
                       <button
                         key={ln.value}
                         onClick={() => toggleLanguage(ln.value as Language)}
-                        className={`flex-1 py-2 text-[12px] border transition-all ${form.languages.includes(ln.value as Language)
-                          ? 'bg-[#1B3A2D] border-[rgba(201,168,76,0.5)] text-[#F5EDD6]'
-                          : 'bg-[#161616] border-[rgba(201,168,76,0.2)] text-[rgba(250,247,240,0.5)] hover:text-[#FAF7F0]'
-                          }`}
+                        className={`flex-1 py-2 text-[12px] border transition-all ${
+                          form.languages.includes(ln.value as Language)
+                            ? 'bg-[#1B3A2D] border-[rgba(201,168,76,0.5)] text-[#F5EDD6]'
+                            : 'bg-[#161616] border-[rgba(201,168,76,0.2)] text-[rgba(250,247,240,0.5)] hover:text-[#FAF7F0]'
+                        }`}
                         style={{ fontFamily: 'DM Mono, monospace' }}
                       >
                         {ln.label}
@@ -498,10 +499,11 @@ export default function DraftNoticePage() {
               <button
                 key={lang}
                 onClick={() => setActiveDocLang(lang)}
-                className={`px-4 py-2 text-[11px] tracking-widest border-r border-[rgba(201,168,76,0.15)] transition-all ${activeDocLang === lang
-                  ? 'bg-[#1B3A2D] text-[#F5EDD6]'
-                  : 'text-[rgba(250,247,240,0.4)] hover:text-[#FAF7F0]'
-                  }`}
+                className={`px-4 py-2 text-[11px] tracking-widest border-r border-[rgba(201,168,76,0.15)] transition-all ${
+                  activeDocLang === lang
+                    ? 'bg-[#1B3A2D] text-[#F5EDD6]'
+                    : 'text-[rgba(250,247,240,0.4)] hover:text-[#FAF7F0]'
+                }`}
                 style={{ fontFamily: 'DM Mono, monospace' }}
               >
                 {lang === 'en' ? 'ENGLISH' : lang === 'ta' ? 'TAMIL' : 'HINDI'}
@@ -513,7 +515,6 @@ export default function DraftNoticePage() {
           content={documents[activeDocLang] ?? ''}
           isGenerating={isGenerating}
           title={documentTitle || 'Legal Notice'}
-          language={activeDocLang}
           onExportPdf={() => exportToPdf(documents[activeDocLang] ?? '', documentTitle, profile, activeDocLang)}
           onExportDocx={() => exportToDocx(documents[activeDocLang] ?? '', documentTitle, profile, activeDocLang)}
           className="flex-1"

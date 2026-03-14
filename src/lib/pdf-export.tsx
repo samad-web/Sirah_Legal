@@ -13,22 +13,10 @@ Font.register({
   src: 'https://cdn.jsdelivr.net/npm/@fontsource/noto-serif-tamil@5.0.3/files/noto-serif-tamil-tamil-400-normal.woff',
 })
 
-const DEFAULT_FONTS: Record<string, string> = {
-  'Times New Roman': 'Times-Roman',
-  'Helvetica': 'Helvetica',
-  'Georgia': 'Times-Roman', // Fallback for standard PDF fonts
-  'Courier New': 'Courier',
-}
-
-function getLangFonts(language: Language = 'en', customFamily?: string | null) {
+function getLangFonts(language: Language = 'en') {
   if (language === 'hi') return { base: 'NotoSerifDevanagari', bold: 'NotoSerifDevanagari', italic: 'NotoSerifDevanagari' }
-  if (language === 'ta') return { base: 'NotoSerifTamil', bold: 'NotoSerifTamil', italic: 'NotoSerifTamil' }
-
-  const family = (customFamily && DEFAULT_FONTS[customFamily]) || 'Times-Roman'
-  const bold = family === 'Times-Roman' ? 'Times-Bold' : family === 'Helvetica' ? 'Helvetica-Bold' : family === 'Courier' ? 'Courier-Bold' : family
-  const italic = family === 'Times-Roman' ? 'Times-Italic' : family === 'Helvetica' ? 'Helvetica-Oblique' : family === 'Courier' ? 'Courier-Oblique' : family
-
-  return { base: family, bold, italic }
+  if (language === 'ta') return { base: 'NotoSerifTamil',       bold: 'NotoSerifTamil',       italic: 'NotoSerifTamil'       }
+  return { base: 'Times-Roman', bold: 'Times-Bold', italic: 'Times-Italic' }
 }
 
 // ─── Indian Court Document Formatting Standards ───────────────────────────────
@@ -38,16 +26,12 @@ function getLangFonts(language: Language = 'en', customFamily?: string | null) {
 // Gutter: Extra left margin mirrors typical HC filing requirements
 // ─────────────────────────────────────────────────────────────────────────────
 
-const DEFAULT_BODY_SIZE = 12
-
-const BODY_SIZE = 12
+const BODY_SIZE    = 12
 const HEADING1_SIZE = 14   // Document title / case caption
 const HEADING2_SIZE = 12   // Section headings (ALL CAPS)
-const SMALL_SIZE = 9    // Header meta / disclaimer
+const SMALL_SIZE    = 9    // Header meta / disclaimer
 
-function makeStyles(f: { base: string; bold: string; italic: string }, customSize?: number | null, customColor?: string | null) {
-  const bodySize = customSize || DEFAULT_BODY_SIZE
-  const bodyColor = customColor || '#000000'
+function makeStyles(f: { base: string; bold: string; italic: string }) {
   return StyleSheet.create({
     page: {
       paddingTop: 90,       // 1.25"
@@ -55,9 +39,9 @@ function makeStyles(f: { base: string; bold: string; italic: string }, customSiz
       paddingLeft: 108,     // 1.5" — standard HC left margin
       paddingRight: 72,     // 1"
       backgroundColor: '#FFFFFF',
-      fontSize: bodySize,
+      fontSize: BODY_SIZE,
       fontFamily: f.base,
-      color: bodyColor,
+      color: '#000000',
     },
 
     // ── Advocate letterhead ────────────────────────────────────────────────────
@@ -233,11 +217,7 @@ function LegalDocumentPDF({
   profile: Profile | null
   language?: Language
 }) {
-  const styles = makeStyles(
-    getLangFonts(language, profile?.font_family),
-    profile?.font_size,
-    profile?.font_color
-  )
+  const styles = makeStyles(getLangFonts(language))
   const rawLines = content.split('\n')
   const classified = rawLines.map(classifyLine).filter(l => l.type !== 'blank')
 
@@ -251,30 +231,23 @@ function LegalDocumentPDF({
     <Document title={title} author={profile?.full_name || 'LexDraft'} creator="LexDraft — Sirah Legal">
       <Page size="A4" style={styles.page} wrap>
         {/* ── Letterhead ─────────────────────────────────────── */}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.headerName, { textAlign: 'left' }]}>{profile?.full_name || 'Advocate'}</Text>
-            {advocateInfo ? <Text style={[styles.headerMeta, { textAlign: 'left' }]}>{advocateInfo}</Text> : null}
-          </View>
-          {profile?.logo_url && (
-            <img src={profile.logo_url} style={{ width: 60, height: 60, objectFit: 'contain' }} />
-          )}
-        </View>
+        <Text style={styles.headerName}>{profile?.full_name || 'Advocate'}</Text>
+        {advocateInfo ? <Text style={styles.headerMeta}>{advocateInfo}</Text> : null}
         <Text style={styles.headerDate}>Date: {formatDate(new Date())}</Text>
         <View style={styles.divider} />
 
         {/* ── Body ───────────────────────────────────────────── */}
         {classified.map((line, i) => {
           switch (line.type) {
-            case 'h1': return <Text key={i} style={styles.h1} wrap={false}>{line.text}</Text>
-            case 'h2': return <Text key={i} style={styles.h2} wrap={false}>{line.text}</Text>
-            case 'h3': return <Text key={i} style={styles.h3} wrap={false}>{line.text}</Text>
-            case 'clause': return <Text key={i} style={styles.clause}              >{line.text}</Text>
-            case 'subClause': return <Text key={i} style={styles.subClause}           >{line.text}</Text>
-            case 'bullet': return <Text key={i} style={styles.bullet}              >{line.text}</Text>
-            case 'valediction': return <Text key={i} style={styles.valediction}         >{line.text}</Text>
+            case 'h1':         return <Text key={i} style={styles.h1}         wrap={false}>{line.text}</Text>
+            case 'h2':         return <Text key={i} style={styles.h2}         wrap={false}>{line.text}</Text>
+            case 'h3':         return <Text key={i} style={styles.h3}         wrap={false}>{line.text}</Text>
+            case 'clause':     return <Text key={i} style={styles.clause}              >{line.text}</Text>
+            case 'subClause':  return <Text key={i} style={styles.subClause}           >{line.text}</Text>
+            case 'bullet':     return <Text key={i} style={styles.bullet}              >{line.text}</Text>
+            case 'valediction':return <Text key={i} style={styles.valediction}         >{line.text}</Text>
             case 'disclaimer': return <Text key={i} style={styles.disclaimer}          >{line.text}</Text>
-            default: return <Text key={i} style={styles.paragraph}           >{line.text}</Text>
+            default:           return <Text key={i} style={styles.paragraph}           >{line.text}</Text>
           }
         })}
 
@@ -289,24 +262,15 @@ function LegalDocumentPDF({
   )
 }
 
-export async function getPdfBlob(
-  content: string,
-  title: string,
-  profile: Profile | null,
-  language: Language = 'en'
-): Promise<Blob> {
-  return await pdf(
-    <LegalDocumentPDF content={content} title={title} profile={profile} language={language} />
-  ).toBlob()
-}
-
 export async function exportToPdf(
   content: string,
   title: string,
   profile: Profile | null,
   language: Language = 'en'
 ): Promise<void> {
-  const blob = await getPdfBlob(content, title, profile, language)
+  const blob = await pdf(
+    <LegalDocumentPDF content={content} title={title} profile={profile} language={language} />
+  ).toBlob()
 
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')

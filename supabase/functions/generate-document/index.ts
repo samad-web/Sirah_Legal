@@ -94,12 +94,11 @@ Use formal conveyancing language. Cite specific statutes. Flag any missing docum
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: corsHeaders })
+    return new Response('ok', { headers: corsHeaders })
   }
 
   try {
@@ -120,11 +119,16 @@ serve(async (req: Request) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
+
+    const langSuffix = language !== 'en'
+      ? `\n\nIMPORTANT: Draft the entire document in ${language === 'ta' ? 'Tamil' : 'Hindi'} language.`
+      : ''
+
     // Build user message — contract-review uses contractText+reviewingAs, others use prompt
     let userContent: string
     if (module === 'contract-review') {
       const contractText = (payload.contractText as string) || ''
-      const reviewingAs = (payload.reviewingAs as string) || 'client'
+      const reviewingAs  = (payload.reviewingAs  as string) || 'client'
       if (!contractText.trim()) {
         return new Response(JSON.stringify({ error: 'No contract text provided. Please upload a valid document.' }), {
           status: 400,
@@ -136,13 +140,8 @@ serve(async (req: Request) => {
       userContent = (payload.prompt as string) || ''
     }
 
-    const languageName = language === 'ta' ? 'Tamil' : language === 'hi' ? 'Hindi' : 'English'
-    const languageInstruction = language !== 'en'
-      ? `\n\nCRITICAL: You MUST draft the entire document (or analysis) in the ${languageName} language. Use professional legal ${languageName}. If specialized legal terms don't exist in ${languageName}, provide the English term in parentheses alongside the ${languageName} transliteration.`
-      : ''
-
     const messages = [
-      { role: 'system', content: systemPrompt + languageInstruction },
+      { role: 'system', content: systemPrompt + langSuffix },
       { role: 'user', content: userContent },
     ]
 

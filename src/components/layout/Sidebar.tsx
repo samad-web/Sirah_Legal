@@ -12,7 +12,6 @@ import {
   LogOut,
   ChevronRight,
   Scale,
-  Users,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
@@ -30,7 +29,6 @@ const navItems: NavItem[] = [
   { to: '/review/contract', icon: <ShieldCheck size={18} />, label: 'Review Contract' },
   { to: '/draft/title-report', icon: <MapPin size={18} />, label: 'Title Report' },
   { to: '/documents', icon: <Folder size={18} />, label: 'Documents' },
-  { to: '/clients', icon: <Users size={18} />, label: 'Clients' },
 ]
 
 export function Sidebar() {

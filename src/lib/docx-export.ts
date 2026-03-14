@@ -16,20 +16,19 @@ import { formatDate } from './utils'
 // Page size : A4
 // ─────────────────────────────────────────────────────────────────────────────
 
-let FONT = 'Times New Roman'
-function getDocFont(language: Language = 'en', customFamily?: string | null): string {
+let FONT            = 'Times New Roman'
+function getDocFont(language: Language = 'en'): string {
   if (language === 'hi' || language === 'ta') return 'Nirmala UI'
-  return customFamily || 'Times New Roman'
+  return 'Times New Roman'
 }
-let BODY_PT = 24   // half-points → 12pt
-let FONT_COLOR = '000000'
-const HEADING1_PT = 28   // 14pt
-const HEADING2_PT = 24   // 12pt bold
-const SMALL_PT = 18   // 9pt
-const LINE_SPACING = 360  // twips — 1.5x (240 = single)
-const PARA_AFTER = 160  // twips after body para (~8pt)
+const BODY_PT       = 24   // half-points → 12pt
+const HEADING1_PT   = 28   // 14pt
+const HEADING2_PT   = 24   // 12pt bold
+const SMALL_PT      = 18   // 9pt
+const LINE_SPACING  = 360  // twips — 1.5x (240 = single)
+const PARA_AFTER    = 160  // twips after body para (~8pt)
 const HEADING_AFTER = 120
-const HEADING_BEFORE = 240
+const HEADING_BEFORE= 240
 
 // ─── Line classifier (mirrors PDF classifier) ─────────────────────────────────
 type LineType = 'h1' | 'h2' | 'h3' | 'clause' | 'subClause' | 'bullet' | 'valediction' | 'disclaimer' | 'blank' | 'paragraph'
@@ -38,14 +37,14 @@ function classifyLine(raw: string): { type: LineType; text: string } {
   const line = raw.trim()
   if (!line) return { type: 'blank', text: '' }
 
-  if (/^#\s+/.test(line)) return { type: 'h1', text: line.replace(/^#+\s*/, '') }
+  if (/^#\s+/.test(line))    return { type: 'h1', text: line.replace(/^#+\s*/, '') }
   if (/^#{2,3}\s+/.test(line)) return { type: 'h2', text: line.replace(/^#+\s*/, '') }
   if (/^(disclaimer|note)\s*:/i.test(line)) return { type: 'disclaimer', text: line }
   if (/^[A-Z][A-Z\s\/\-&,().]{4,}:?$/.test(line)) return { type: 'h2', text: line }
-  if (/^\d+\.\s/.test(line)) return { type: 'clause', text: line }
+  if (/^\d+\.\s/.test(line))  return { type: 'clause',    text: line }
   if (/^\d+\.\d+/.test(line)) return { type: 'subClause', text: line }
   if (/^(\([a-z]+\)|[a-z]+\.)\s/i.test(line)) return { type: 'subClause', text: line }
-  if (/^[-•*]\s/.test(line)) return { type: 'bullet', text: line }
+  if (/^[-•*]\s/.test(line))  return { type: 'bullet',    text: line }
   if (/^(yours (faithfully|truly|sincerely)|sd\/-?|signature|advocate for|counsel for|place\s*:|date\s*:)/i.test(line))
     return { type: 'valediction', text: line }
 
@@ -53,12 +52,12 @@ function classifyLine(raw: string): { type: LineType; text: string } {
 }
 
 // ─── Paragraph builders ───────────────────────────────────────────────────────
-function bodyPara(text: string, extra?: any): Paragraph {
+function bodyPara(text: string, extra?: ConstructorParameters<typeof Paragraph>[0]): Paragraph {
   return new Paragraph({
-    children: [new TextRun({ text, size: BODY_PT, font: FONT, color: FONT_COLOR })],
+    children: [new TextRun({ text, size: BODY_PT, font: FONT })],
     alignment: AlignmentType.JUSTIFIED,
     spacing: { line: LINE_SPACING, after: PARA_AFTER },
-    ...(extra || {}),
+    ...extra,
   })
 }
 
@@ -133,15 +132,13 @@ function buildContentParagraph(line: { type: LineType; text: string }, i: number
 }
 
 // ─── Main export function ────────────────────────────────────────────────────
-export async function getDocxBlob(
+export async function exportToDocx(
   content: string,
   title: string,
   profile: Profile | null,
   language: Language = 'en'
-): Promise<Blob> {
-  FONT = getDocFont(language, profile?.font_family)
-  BODY_PT = (profile?.font_size || 12) * 2
-  FONT_COLOR = (profile?.font_color || '#000000').replace('#', '')
+): Promise<void> {
+  FONT = getDocFont(language)
   const classified = content.split('\n').map(classifyLine).filter(l => l.type !== 'blank')
 
   const advocateInfo = [
@@ -218,10 +215,10 @@ export async function getDocxBlob(
           page: {
             size: { orientation: PageOrientation.PORTRAIT, width: convertInchesToTwip(8.27), height: convertInchesToTwip(11.69) }, // A4
             margin: {
-              top: convertInchesToTwip(1.25), // 1800
+              top:    convertInchesToTwip(1.25), // 1800
               bottom: convertInchesToTwip(1),    // 1440
-              left: convertInchesToTwip(1.5),  // 2160 — HC standard
-              right: convertInchesToTwip(1),    // 1440
+              left:   convertInchesToTwip(1.5),  // 2160 — HC standard
+              right:  convertInchesToTwip(1),    // 1440
             },
           },
         },
@@ -237,16 +234,7 @@ export async function getDocxBlob(
     ],
   })
 
-  return await Packer.toBlob(doc)
-}
-
-export async function exportToDocx(
-  content: string,
-  title: string,
-  profile: Profile | null,
-  language: Language = 'en'
-): Promise<void> {
-  const blob = await getDocxBlob(content, title, profile, language)
+  const blob = await Packer.toBlob(doc)
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url

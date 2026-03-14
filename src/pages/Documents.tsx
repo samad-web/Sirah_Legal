@@ -2,17 +2,14 @@ import { useEffect, useState, useMemo, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Search, Trash2, Download, FileText, Eye, X, SlidersHorizontal } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
-import { getUserDocuments, deleteDocument, type Document, supabase } from '@/lib/supabase'
+import { getUserDocuments, deleteDocument } from '@/lib/api'
+import type { Document } from '@/lib/supabase'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/FormFields'
 import { DocumentPreview } from '@/components/ui/DocumentPreview'
 import { formatDate, cn } from '@/lib/utils'
-import { exportToPdf, getPdfBlob } from '@/lib/pdf-export'
-import { exportToDocx, getDocxBlob } from '@/lib/docx-export'
-import JSZip from 'jszip'
-import { saveAs } from 'file-saver'
-import { EmailModal } from '@/components/ui/EmailModal'
-import { Mail } from 'lucide-react'
+import { exportToPdf } from '@/lib/pdf-export'
+import { exportToDocx } from '@/lib/docx-export'
 
 type FilterType = 'all' | 'notice' | 'contract' | 'title-report' | 'contract-review'
 type FilterLang = 'all' | 'en' | 'ta' | 'hi'
@@ -39,9 +36,7 @@ export default function DocumentsPage() {
   const [filterType, setFilterType] = useState<FilterType>('all')
   const [filterLang, setFilterLang] = useState<FilterLang>('all')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [downloading, setDownloading] = useState(false)
   const [previewDoc, setPreviewDoc] = useState<Document | null>(null)
-  const [emailDoc, setEmailDoc] = useState<Document | null>(null)
 
   const fetchDocuments = useCallback(() => {
     if (!user) return
@@ -95,70 +90,11 @@ export default function DocumentsPage() {
     setSelectedIds(new Set())
   }
 
-  const handleBulkDownload = async () => {
-    if (selectedIds.size === 0) return
-    setDownloading(true)
-    try {
-      const zip = new JSZip()
-      const selectedDocs = documents.filter(d => selectedIds.has(d.id))
-
-      for (const doc of selectedDocs) {
-        if (!doc.content) continue
-        const safeTitle = doc.title.replace(/[^a-zA-Z0-9_\-\s]/g, '').replace(/\s+/g, '_')
-
-        // Add PDF
-        const pdfBlob = await getPdfBlob(doc.content, doc.title, profile, doc.language as any)
-        zip.file(`${safeTitle}.pdf`, pdfBlob)
-
-        // Add DOCX
-        const docxBlob = await getDocxBlob(doc.content, doc.title, profile, doc.language as any)
-        zip.file(`${safeTitle}.docx`, docxBlob)
-      }
-
-      const content = await zip.generateAsync({ type: 'blob' })
-      saveAs(content, `LexDraft_Export_${new Date().toISOString().split('T')[0]}.zip`)
-    } catch (err) {
-      console.error('[LexDraft] Bulk download failed:', err)
-      alert('Failed to generate ZIP. Please try again.')
-    } finally {
-      setDownloading(false)
-    }
-  }
-
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this document?')) return
     await deleteDocument(id)
     setDocuments(docs => docs.filter(d => d.id !== id))
     setPreviewDoc(null)
-  }
-
-  const handleSendEmail = async (data: { to: string; subject: string; body: string; attachPdf: boolean }) => {
-    if (!emailDoc) return
-
-    let base64Attachment = null
-    if (data.attachPdf && emailDoc.content) {
-      const blob = await getPdfBlob(emailDoc.content, emailDoc.title, profile, emailDoc.language as any)
-      const reader = new FileReader()
-      base64Attachment = await new Promise<string>((resolve) => {
-        reader.onloadend = () => {
-          const base64 = (reader.result as string).split(',')[1]
-          resolve(base64)
-        }
-        reader.readAsDataURL(blob)
-      })
-    }
-
-    const { error } = await supabase.functions.invoke('send-document-email', {
-      body: {
-        to: data.to,
-        subject: data.subject,
-        body: data.body,
-        attachment: base64Attachment,
-        filename: `${emailDoc.title.replace(/\s+/g, '_')}.pdf`
-      }
-    })
-
-    if (error) throw error
   }
 
   return (
@@ -226,20 +162,9 @@ export default function DocumentsPage() {
         </div>
 
         {selectedIds.size > 0 && (
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              icon={<Download size={12} />}
-              onClick={handleBulkDownload}
-              loading={downloading}
-            >
-              DOWNLOAD ZIP ({selectedIds.size})
-            </Button>
-            <Button variant="danger" size="sm" icon={<Trash2 size={12} />} onClick={handleBulkDelete}>
-              DELETE
-            </Button>
-          </div>
+          <Button variant="danger" size="sm" icon={<Trash2 size={12} />} onClick={handleBulkDelete}>
+            DELETE ({selectedIds.size})
+          </Button>
         )}
       </div>
 
@@ -311,10 +236,7 @@ export default function DocumentsPage() {
               <span className="text-[10px] text-[rgba(250,247,240,0.45)] border border-[rgba(250,247,240,0.1)] px-1.5 py-0.5 w-fit" style={{ fontFamily: 'DM Mono, monospace' }}>
                 {doc.status.toUpperCase()}
               </span>
-              <div className="flex items-center gap-1 group-hover:opacity-100 transition-opacity">
-                <button onClick={() => setEmailDoc(doc)} className="p-1.5 text-[rgba(250,247,240,0.4)] hover:text-[#FAF7F0]" title="Email">
-                  <Mail size={12} />
-                </button>
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button onClick={() => setPreviewDoc(doc)} className="p-1.5 text-[rgba(250,247,240,0.4)] hover:text-[#FAF7F0]" title="Preview">
                   <Eye size={12} />
                 </button>
@@ -351,9 +273,6 @@ export default function DocumentsPage() {
                   {previewDoc.title}
                 </span>
                 <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={() => setEmailDoc(previewDoc)} className="text-[10px]">
-                    EMAIL
-                  </Button>
                   <Button variant="outline" size="sm" onClick={() => exportToPdf(previewDoc.content, previewDoc.title, profile)} className="text-[10px]">
                     PDF
                   </Button>
@@ -370,9 +289,6 @@ export default function DocumentsPage() {
                   content={previewDoc.content || ''}
                   isGenerating={false}
                   title={previewDoc.title}
-                  language={previewDoc.language}
-                  onExportPdf={() => exportToPdf(previewDoc.content || '', previewDoc.title, profile, previewDoc.language as any)}
-                  onExportDocx={() => exportToDocx(previewDoc.content || '', previewDoc.title, profile, previewDoc.language as any)}
                   className="h-full"
                 />
               </div>
