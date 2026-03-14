@@ -1,0 +1,162 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #0E0E0E;
+  --color-foreground: #FAF7F0;
+  --color-parchment: #F5EDD6;
+  --color-forest: #1B3A2D;
+  --color-forest-light: #2a5842;
+  --color-gold: #C9A84C;
+  --color-gold-dim: rgba(201, 168, 76, 0.3);
+  --color-gold-faint: rgba(201, 168, 76, 0.15);
+  --color-surface: #161616;
+  --color-surface-2: #1c1c1c;
+  --color-muted: rgba(250, 247, 240, 0.5);
+  --color-border: rgba(201, 168, 76, 0.25);
+
+  --font-display: 'Cormorant Garamond', serif;
+  --font-mono: 'DM Mono', monospace;
+  --font-body: 'Lora', serif;
+
+  --radius: 0px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+*[class] {
+  border-radius: 0 !important;
+}
+
+html, body {
+  background-color: #0E0E0E;
+  color: #FAF7F0;
+  font-family: 'Lora', serif;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Background grain overlay */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 200px;
+}
+
+/* Typography utilities */
+.font-display { font-family: 'Cormorant Garamond', serif; }
+.font-mono-custom { font-family: 'DM Mono', monospace; }
+.font-body-custom { font-family: 'Lora', serif; }
+
+/* Gold thin line divider */
+.gold-line {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #C9A84C, transparent);
+}
+
+.gold-line-solid {
+  height: 1px;
+  background: rgba(201, 168, 76, 0.4);
+}
+
+/* Document preview parchment */
+.document-preview {
+  background: #F5EDD6;
+  color: #1a1208;
+  font-family: 'Cormorant Garamond', serif;
+  box-shadow: 
+    inset 0 0 40px rgba(0,0,0,0.12),
+    inset 0 0 80px rgba(0,0,0,0.06);
+  position: relative;
+}
+
+/* Parchment grain */
+.document-preview::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 200px;
+  mix-blend-mode: multiply;
+}
+
+/* Typewriter animation */
+@keyframes typewriter-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes typewriter-reveal {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.typewriter-line {
+  animation: typewriter-reveal 0.3s ease forwards;
+  opacity: 0;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: #0E0E0E; }
+::-webkit-scrollbar-thumb { background: rgba(201, 168, 76, 0.3); }
+::-webkit-scrollbar-thumb:hover { background: rgba(201, 168, 76, 0.6); }
+
+/* Sharp input styles */
+input, textarea, select {
+  outline: none;
+}
+input:focus, textarea:focus, select:focus {
+  box-shadow: 0 0 0 1px rgba(201, 168, 76, 0.5);
+}
+
+/* Upload zone dashed */
+.upload-zone {
+  border: 2px dashed rgba(201, 168, 76, 0.35);
+  transition: all 0.2s;
+}
+.upload-zone:hover, .upload-zone.drag-over {
+  border-color: rgba(201, 168, 76, 0.8);
+  background: rgba(201, 168, 76, 0.03);
+}
+
+/* Animated gold underline on hover for nav */
+.nav-hover-gold {
+  position: relative;
+}
+.nav-hover-gold::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: 0;
+  height: 1px;
+  background: #C9A84C;
+  transition: width 0.25s ease;
+}
+.nav-hover-gold:hover::after { width: 100%; }
+
+/* Risk clause left borders */
+.clause-risk { border-left: 3px solid #f87171; }
+.clause-missing { border-left: 3px solid #fb923c; }
+.clause-negotiate { border-left: 3px solid #fbbf24; }
+.clause-standard { border-left: 3px solid #4ade80; }
+
+/* Diff view */
+.diff-removed { background: rgba(248, 113, 113, 0.15); text-decoration: line-through; color: #f87171; }
+.diff-added { background: rgba(74, 222, 128, 0.15); color: #4ade80; }
+
