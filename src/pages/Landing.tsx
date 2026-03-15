@@ -143,18 +143,18 @@ export default function LandingPage() {
       {/* Nav */}
       <nav className="fixed top-0 left-0 right-0 z-40 border-b border-[rgba(201,168,76,0.15)] bg-[rgba(14,14,14,0.95)] backdrop-blur-sm">
         <div className="h-[1px] bg-[rgba(201,168,76,0.4)]" />
-        <div className="max-w-7xl mx-auto px-8 h-14 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 md:px-8 h-14 flex items-center justify-between">
           <span
             className="text-xl text-[#FAF7F0]"
             style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 500 }}
           >
             LexDraft
           </span>
-          <div className="flex items-center gap-6">
-            <Link to="/#features" className="nav-hover-gold text-[11px] text-[rgba(250,247,240,0.6)] hover:text-[#FAF7F0] transition-colors" style={{ fontFamily: 'DM Mono, monospace' }}>
+          <div className="flex items-center gap-3 md:gap-6">
+            <Link to="/#features" className="hidden sm:block nav-hover-gold text-[11px] text-[rgba(250,247,240,0.6)] hover:text-[#FAF7F0] transition-colors" style={{ fontFamily: 'DM Mono, monospace' }}>
               FEATURES
             </Link>
-            <Link to="/#pricing" className="nav-hover-gold text-[11px] text-[rgba(250,247,240,0.6)] hover:text-[#FAF7F0] transition-colors" style={{ fontFamily: 'DM Mono, monospace' }}>
+            <Link to="/#pricing" className="hidden sm:block nav-hover-gold text-[11px] text-[rgba(250,247,240,0.6)] hover:text-[#FAF7F0] transition-colors" style={{ fontFamily: 'DM Mono, monospace' }}>
               PRICING
             </Link>
             <Link to="/login">
@@ -166,8 +166,8 @@ export default function LandingPage() {
 
       {/* Hero */}
       <section className="min-h-screen flex items-center pt-14">
-        <div className="max-w-7xl mx-auto px-8 w-full">
-          <div className="grid grid-cols-2 gap-12 items-center">
+        <div className="max-w-7xl mx-auto px-4 md:px-8 w-full">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 items-center py-12 md:py-0">
             {/* Left */}
             <motion.div
               initial={{ opacity: 0, y: 24 }}
@@ -181,7 +181,7 @@ export default function LandingPage() {
                 AI-Powered Legal Drafting
               </p>
               <h1
-                className="text-[76px] leading-[1.05] text-[#FAF7F0] mb-6"
+                className="text-[48px] md:text-[76px] leading-[1.05] text-[#FAF7F0] mb-6"
                 style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 300 }}
               >
                 Legal documents,{' '}
@@ -252,7 +252,7 @@ export default function LandingPage() {
       <div className="gold-line-solid max-w-7xl mx-auto" />
 
       {/* Features */}
-      <section id="features" className="py-24 max-w-7xl mx-auto px-8">
+      <section id="features" className="py-16 md:py-24 max-w-7xl mx-auto px-4 md:px-8">
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -263,14 +263,14 @@ export default function LandingPage() {
             WHAT LEXDRAFT DOES
           </p>
           <h2
-            className="text-[48px] text-[#FAF7F0] mb-16"
+            className="text-[36px] md:text-[48px] text-[#FAF7F0] mb-10 md:mb-16"
             style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 400 }}
           >
             Every document, done right.
           </h2>
         </motion.div>
 
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
           {features.map((f, i) => (
             <motion.div
               key={i}
@@ -303,7 +303,7 @@ export default function LandingPage() {
       <div className="gold-line-solid max-w-7xl mx-auto" />
 
       {/* Pricing */}
-      <section id="pricing" className="py-24 max-w-7xl mx-auto px-8">
+      <section id="pricing" className="py-16 md:py-24 max-w-7xl mx-auto px-4 md:px-8">
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -314,14 +314,14 @@ export default function LandingPage() {
             PRICING
           </p>
           <h2
-            className="text-[48px] text-[#FAF7F0] mb-16"
+            className="text-[36px] md:text-[48px] text-[#FAF7F0] mb-10 md:mb-16"
             style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 400 }}
           >
             Simple, transparent pricing.
           </h2>
         </motion.div>
 
-        <div className="grid grid-cols-3 gap-0 border border-[rgba(201,168,76,0.2)]">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-0 md:border md:border-[rgba(201,168,76,0.2)]">
           {pricing.map((plan, i) => (
             <motion.div
               key={i}
@@ -329,11 +329,11 @@ export default function LandingPage() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: i * 0.08 }}
-              className={`p-8 relative ${
+              className={`p-6 md:p-8 relative border border-[rgba(201,168,76,0.2)] md:border-0 ${
                 plan.recommended
-                  ? 'border-x border-[#C9A84C] bg-[#0f1a14]'
+                  ? 'md:border-x md:border-[#C9A84C] bg-[#0f1a14]'
                   : 'bg-[#0E0E0E]'
-              } ${i < pricing.length - 1 ? 'border-r border-[rgba(201,168,76,0.1)]' : ''}`}
+              } ${i < pricing.length - 1 ? 'md:border-r md:border-[rgba(201,168,76,0.1)]' : ''}`}
             >
               {plan.recommended && (
                 <div
@@ -384,15 +384,15 @@ export default function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-[rgba(201,168,76,0.15)] py-8 max-w-7xl mx-auto px-8">
-        <div className="flex items-center justify-between">
+      <footer className="border-t border-[rgba(201,168,76,0.15)] py-8 max-w-7xl mx-auto px-4 md:px-8">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           <span
             className="text-[18px] text-[#FAF7F0]"
             style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 400 }}
           >
             LexDraft
           </span>
-          <div className="flex items-center gap-8">
+          <div className="flex items-center gap-6">
             <Link to="#" className="text-[11px] text-[rgba(250,247,240,0.4)] hover:text-[rgba(250,247,240,0.8)] nav-hover-gold" style={{ fontFamily: 'DM Mono, monospace' }}>
               PRIVACY
             </Link>
@@ -403,7 +403,7 @@ export default function LandingPage() {
               CONTACT
             </Link>
           </div>
-          <span className="text-[11px] text-[rgba(250,247,240,0.3)]" style={{ fontFamily: 'DM Mono, monospace' }}>
+          <span className="hidden sm:block text-[11px] text-[rgba(250,247,240,0.3)]" style={{ fontFamily: 'DM Mono, monospace' }}>
             MADE FOR INDIAN ADVOCATES
           </span>
         </div>

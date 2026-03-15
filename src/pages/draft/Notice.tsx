@@ -85,6 +85,7 @@ Draft a complete, formal legal notice. Include all standard sections: advocate h
 export default function DraftNoticePage() {
   const { profile, user } = useAuth()
   const [step, setStep] = useState(0)
+  const [mobilePanel, setMobilePanel] = useState<'form' | 'preview'>('form')
   const [form, setForm] = useState<FormData>({
     noticeType: '',
     senderName: '',
@@ -187,9 +188,24 @@ export default function DraftNoticePage() {
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex flex-col h-full">
+      {/* Mobile panel tabs */}
+      <div className="flex md:hidden border-b border-[rgba(201,168,76,0.15)] bg-[#0a0a0a] shrink-0">
+        {(['form', 'preview'] as const).map((p) => (
+          <button
+            key={p}
+            onClick={() => setMobilePanel(p)}
+            className={`flex-1 py-2.5 text-[11px] tracking-widest transition-colors ${mobilePanel === p ? 'bg-[#1B3A2D] text-[#F5EDD6]' : 'text-[rgba(250,247,240,0.4)]'}`}
+            style={{ fontFamily: 'DM Mono, monospace' }}
+          >
+            {p.toUpperCase()}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-1 min-h-0">
       {/* Form panel */}
-      <div className="w-[45%] flex flex-col border-r border-[rgba(201,168,76,0.15)] overflow-y-auto">
+      <div className={`${mobilePanel === 'form' ? 'flex' : 'hidden'} md:flex w-full md:w-[45%] flex-col border-r border-[rgba(201,168,76,0.15)] overflow-y-auto`}>
         {/* Header */}
         <div className="px-6 py-4 border-b border-[rgba(201,168,76,0.15)] bg-[#0a0a0a]">
           <p
@@ -492,7 +508,7 @@ export default function DraftNoticePage() {
       )}
 
       {/* Preview panel */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className={`${mobilePanel === 'preview' ? 'flex' : 'hidden'} md:flex flex-1 flex-col overflow-hidden`}>
         {Object.keys(documents).length > 1 && (
           <div className="flex border-b border-[rgba(201,168,76,0.15)] bg-[#0a0a0a]">
             {(Object.keys(documents) as Language[]).map(lang => (
@@ -520,6 +536,7 @@ export default function DraftNoticePage() {
           className="flex-1"
         />
       </div>
+      </div>{/* end flex-1 row */}
     </div>
   )
 }

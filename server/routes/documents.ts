@@ -1,39 +1,72 @@
 import { Router } from 'express'
 import type { Request, Response } from 'express'
-import { requireAuth, type AuthRequest } from '../middleware/auth.js'
+import { z } from 'zod'
+import { requireAuth } from '../middleware/auth.js'
+import type { AuthRequest } from '../middleware/auth.js'
 import { supabase } from '../lib/supabase.js'
+
+// ─── Schemas ──────────────────────────────────────────────────────────────────
+
+const documentCreateSchema = z.object({
+  title: z.string().min(1, 'Title is required').max(500),
+  type: z.enum(['notice', 'contract', 'title-report', 'contract-review']),
+  language: z.enum(['en', 'ta', 'hi']),
+  content: z.string(),
+  analysis: z.record(z.string(), z.unknown()).nullable().optional(),
+  status: z.enum(['draft', 'exported', 'shared']).optional().default('draft'),
+})
+
+const documentUpdateSchema = documentCreateSchema.partial()
+
+const paginationSchema = z.object({
+  page: z.coerce.number().int().min(1).optional().default(1),
+  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+})
 
 export const documentsRouter = Router()
 
 documentsRouter.use(requireAuth)
 
-// GET /api/documents — fetch all documents for the authenticated user
+// GET /api/documents?page=1&limit=20
 documentsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
   const userId = (req as AuthRequest).userId
 
-  const { data, error } = await supabase
+  const pageResult = paginationSchema.safeParse(req.query)
+  if (!pageResult.success) {
+    res.status(400).json({ error: 'Invalid pagination params' })
+    return
+  }
+  const { page, limit } = pageResult.data
+  const offset = (page - 1) * limit
+
+  const { data, error, count } = await supabase
     .from('documents')
-    .select('*')
+    .select('*', { count: 'exact' })
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1)
 
   if (error) {
     res.status(500).json({ error: error.message })
     return
   }
 
-  res.json(data ?? [])
+  res.json({ data: data ?? [], total: count ?? 0, page, limit })
 })
 
-// POST /api/documents — create a new document
+// POST /api/documents
 documentsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
   const userId = (req as AuthRequest).userId
-  // Strip any user_id from the body — always use the one from the JWT
-  const { user_id: _ignored, ...rest } = req.body
+
+  const parsed = documentCreateSchema.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues.map(i => i.message).join('; ') })
+    return
+  }
 
   const { data, error } = await supabase
     .from('documents')
-    .insert({ ...rest, user_id: userId })
+    .insert({ ...parsed.data, user_id: userId })
     .select()
     .single()
 
@@ -45,14 +78,20 @@ documentsRouter.post('/', async (req: Request, res: Response): Promise<void> => 
   res.status(201).json(data)
 })
 
-// PATCH /api/documents/:id — update a document
+// PATCH /api/documents/:id
 documentsRouter.patch('/:id', async (req: Request, res: Response): Promise<void> => {
   const userId = (req as AuthRequest).userId
   const { id } = req.params
 
+  const parsed = documentUpdateSchema.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues.map(i => i.message).join('; ') })
+    return
+  }
+
   const { data, error } = await supabase
     .from('documents')
-    .update({ ...req.body, updated_at: new Date().toISOString() })
+    .update({ ...parsed.data, updated_at: new Date().toISOString() })
     .eq('id', id)
     .eq('user_id', userId)
     .select()
@@ -66,7 +105,7 @@ documentsRouter.patch('/:id', async (req: Request, res: Response): Promise<void>
   res.json(data)
 })
 
-// DELETE /api/documents/:id — delete a document
+// DELETE /api/documents/:id
 documentsRouter.delete('/:id', async (req: Request, res: Response): Promise<void> => {
   const userId = (req as AuthRequest).userId
   const { id } = req.params

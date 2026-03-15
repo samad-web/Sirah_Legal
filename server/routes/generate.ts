@@ -1,9 +1,13 @@
 import { Router } from 'express'
 import type { Request, Response } from 'express'
-import { requireAuth, type AuthRequest } from '../middleware/auth.js'
+import rateLimit from 'express-rate-limit'
+import { z } from 'zod'
+import { requireAuth } from '../middleware/auth.js'
+import type { AuthRequest } from '../middleware/auth.js'
 
 const OPENAI_BASE = 'https://api.openai.com/v1'
 const OPENAI_MODEL = 'gpt-4o-mini'
+const OPENAI_TIMEOUT_MS = 90_000
 
 const SYSTEM_PROMPTS: Record<string, string> = {
   notice: `You are an expert Indian legal counsel specializing in drafting legal notices under Indian law. You draft formal, authoritative legal notices for Indian advocates that are:
@@ -110,22 +114,43 @@ Do NOT fabricate registration numbers or survey numbers. Use [TO BE VERIFIED] as
 End with: "DISCLAIMER: This document is AI-assisted. It must be reviewed and approved by a qualified advocate before use, filing, or sending."`,
 }
 
+// ─── Zod schema ───────────────────────────────────────────────────────────────
+
+const generateSchema = z.object({
+  module: z.enum(['notice', 'contract', 'title-report', 'contract-review']),
+  language: z.enum(['en', 'ta', 'hi']),
+  payload: z.record(z.unknown()),
+})
+
+// ─── Rate limiter (per user, keyed on JWT userId) ─────────────────────────────
+
+const generateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  keyGenerator: (req) => (req as AuthRequest).userId ?? req.ip ?? 'unknown',
+  message: { error: 'Too many generation requests. You can generate up to 10 documents per 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Skip rate limiting for contract-review since it's a single non-streaming call
+  skip: (req) => (req.body as { module?: string })?.module === 'contract-review',
+})
+
 export const generateRouter = Router()
 
+// requireAuth MUST come before generateLimiter so userId is available for key generation
 generateRouter.use(requireAuth)
+generateRouter.use(generateLimiter)
 
 generateRouter.post('/', async (req: Request, res: Response): Promise<void> => {
-  const { module, language, payload } = req.body as {
-    module: string
-    language: string
-    payload: Record<string, unknown>
-  }
-
-  const systemPrompt = SYSTEM_PROMPTS[module]
-  if (!systemPrompt) {
-    res.status(400).json({ error: `Unknown module: ${module}` })
+  // Validate request body
+  const parsed = generateSchema.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues.map(i => i.message).join('; ') })
     return
   }
+
+  const { module, language, payload } = parsed.data
+  const systemPrompt = SYSTEM_PROMPTS[module]
 
   const openaiKey = process.env.OPENAI_API_KEY
   if (!openaiKey) {
@@ -149,6 +174,10 @@ generateRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     userContent = `Review the following contract from the perspective of the "${reviewingAs}".\n\nCONTRACT TEXT:\n${contractText}`
   } else {
     userContent = (payload.prompt as string) ?? ''
+    if (!userContent.trim()) {
+      res.status(400).json({ error: 'No prompt provided.' })
+      return
+    }
   }
 
   const messages = [
@@ -161,12 +190,16 @@ generateRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     Authorization: `Bearer ${openaiKey}`,
   }
 
-  // contract-review: non-streaming JSON response
+  // ── contract-review: non-streaming JSON response ──────────────────────────
   if (module === 'contract-review') {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS)
+
     try {
       const response = await fetch(`${OPENAI_BASE}/chat/completions`, {
         method: 'POST',
         headers: openaiHeaders,
+        signal: controller.signal,
         body: JSON.stringify({
           model: OPENAI_MODEL,
           messages,
@@ -204,16 +237,26 @@ generateRouter.post('/', async (req: Request, res: Response): Promise<void> => {
 
       res.json({ analysis })
     } catch (err) {
-      res.status(500).json({ error: String(err) })
+      if ((err as Error).name === 'AbortError') {
+        res.status(504).json({ error: 'OpenAI request timed out after 90 seconds.' })
+      } else {
+        res.status(500).json({ error: String(err) })
+      }
+    } finally {
+      clearTimeout(timeout)
     }
     return
   }
 
-  // All other modules: SSE streaming
+  // ── All other modules: SSE streaming ─────────────────────────────────────
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS)
+
   try {
     const openaiRes = await fetch(`${OPENAI_BASE}/chat/completions`, {
       method: 'POST',
       headers: openaiHeaders,
+      signal: controller.signal,
       body: JSON.stringify({
         model: OPENAI_MODEL,
         messages,
@@ -245,8 +288,7 @@ generateRouter.post('/', async (req: Request, res: Response): Promise<void> => {
           break
         }
 
-        const text = decoder.decode(value, { stream: true })
-        for (const line of text.split('\n')) {
+        for (const line of decoder.decode(value, { stream: true }).split('\n')) {
           if (!line.startsWith('data: ')) continue
           const data = line.slice(6).trim()
           if (!data) continue
@@ -268,9 +310,7 @@ generateRouter.post('/', async (req: Request, res: Response): Promise<void> => {
               break
             }
             const chunk = parsed.choices?.[0]?.delta?.content ?? ''
-            if (chunk) {
-              res.write(`data: ${JSON.stringify({ chunk })}\n\n`)
-            }
+            if (chunk) res.write(`data: ${JSON.stringify({ chunk })}\n\n`)
           } catch {
             // skip malformed SSE lines
           }
@@ -281,8 +321,19 @@ generateRouter.post('/', async (req: Request, res: Response): Promise<void> => {
       res.end()
     }
   } catch (err) {
-    if (!res.headersSent) {
+    clearTimeout(timeout)
+    if ((err as Error).name === 'AbortError') {
+      if (!res.headersSent) {
+        res.status(504).json({ error: 'OpenAI request timed out after 90 seconds.' })
+      } else {
+        res.write(`data: ${JSON.stringify({ error: 'Generation timed out.' })}\n\n`)
+        res.end()
+      }
+    } else if (!res.headersSent) {
       res.status(500).json({ error: String(err) })
     }
+    return
   }
+
+  clearTimeout(timeout)
 })

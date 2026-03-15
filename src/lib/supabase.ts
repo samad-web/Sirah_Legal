@@ -5,8 +5,6 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    // Bypass Web Locks API to prevent "Lock broken by steal" errors during HMR
-    lock: <R>(_name: string, _acquireTimeout: number, fn: () => Promise<R>): Promise<R> => fn(),
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
@@ -25,9 +23,25 @@ export interface Profile {
   office_address: string | null
   default_language: string
   default_state: string | null
+  default_dispute: string | null
+  letterhead_url: string | null
+  signature_url: string | null
+  email_notifications: boolean
   plan: string
   documents_this_month: number
+  role: string
+  created_by_lawyer_id: string | null
   created_at: string
+}
+
+export interface Case {
+  id: string
+  lawyer_id: string
+  title: string
+  description: string | null
+  status: 'active' | 'closed' | 'archived'
+  created_at: string
+  updated_at: string
 }
 
 export interface Document {

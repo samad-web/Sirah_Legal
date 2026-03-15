@@ -96,6 +96,7 @@ export default function TitleReportPage() {
   const [documents, setDocuments] = useState<Record<string, string>>({})
   const [activeDocLang, setActiveDocLang] = useState<Language>('en')
   const [isGenerating, setIsGenerating] = useState(false)
+  const [mobilePanel, setMobilePanel] = useState<'form' | 'preview'>('form')
   const [documentTitle, setDocumentTitle] = useState('')
   const [generateError, setGenerateError] = useState('')
   const [showDateModal, setShowDateModal] = useState(false)
@@ -179,9 +180,24 @@ export default function TitleReportPage() {
   const canGenerate = form.village && form.district && form.state && form.preparedFor
 
   return (
-    <div className="flex h-full">
+    <div className="flex flex-col h-full">
+      {/* Mobile tabs */}
+      <div className="flex md:hidden border-b border-[rgba(201,168,76,0.15)] bg-[#0a0a0a]">
+        {(['form', 'preview'] as const).map(panel => (
+          <button
+            key={panel}
+            onClick={() => setMobilePanel(panel)}
+            className={`flex-1 py-2.5 text-[10px] tracking-widest transition-all ${mobilePanel === panel ? 'bg-[#1B3A2D] text-[#F5EDD6]' : 'text-[rgba(250,247,240,0.4)]'}`}
+            style={{ fontFamily: 'DM Mono, monospace' }}
+          >
+            {panel === 'form' ? 'FORM' : 'PREVIEW'}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-1 min-h-0">
       {/* Form (left 3-pane area) */}
-      <div className="w-[45%] border-r border-[rgba(201,168,76,0.15)] overflow-y-auto flex flex-col">
+      <div className={`${mobilePanel === 'form' ? 'flex' : 'hidden'} md:flex w-full md:w-[45%] border-r border-[rgba(201,168,76,0.15)] overflow-y-auto flex-col`}>
         {/* Header */}
         <div className="px-6 py-4 border-b border-[rgba(201,168,76,0.15)] bg-[#0a0a0a]">
           <p className="text-[11px] tracking-widest text-[rgba(201,168,76,0.7)] mb-1" style={{ fontFamily: 'DM Mono, monospace' }}>
@@ -370,7 +386,7 @@ export default function TitleReportPage() {
       )}
 
       {/* Preview */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className={`${mobilePanel === 'preview' ? 'flex' : 'hidden'} md:flex flex-1 flex-col overflow-hidden`}>
         {Object.keys(documents).length > 1 && (
           <div className="flex border-b border-[rgba(201,168,76,0.15)] bg-[#0a0a0a]">
             {(Object.keys(documents) as Language[]).map(lang => (
@@ -398,6 +414,7 @@ export default function TitleReportPage() {
           className="flex-1"
         />
       </div>
+      </div>{/* end flex-1 row */}
     </div>
   )
 }

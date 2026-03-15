@@ -1,13 +1,32 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { Save, Upload, Check } from 'lucide-react'
+import { Save, Upload, Check, X, ImageIcon } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
+import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/Button'
 import { FormField, Input, Select, Textarea } from '@/components/ui/FormFields'
 import { INDIAN_STATES } from '@/lib/utils'
 
+const STORAGE_BUCKET = 'advocate-files'
+
+async function uploadFile(userId: string, file: File, slot: 'letterhead' | 'signature'): Promise<string> {
+  const ext = file.name.split('.').pop() ?? 'bin'
+  const path = `${userId}/${slot}.${ext}`
+
+  const { error } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .upload(path, file, { upsert: true })
+
+  if (error) throw new Error(`Upload failed: ${error.message}`)
+
+  const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path)
+  // Bust cache so the browser picks up the new file
+  return `${data.publicUrl}?t=${Date.now()}`
+}
+
 export default function SettingsPage() {
-  const { profile, updateProfile } = useAuth()
+  const { user, profile, updateProfile } = useAuth()
+
   const [form, setForm] = useState({
     full_name: '',
     bar_council_no: '',
@@ -17,30 +36,80 @@ export default function SettingsPage() {
     default_language: 'en',
     default_state: '',
     default_dispute: 'arbitration',
+    letterhead_url: '' as string | null,
+    signature_url: '' as string | null,
+    email_notifications: true,
   })
+
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const [uploadingLetterhead, setUploadingLetterhead] = useState(false)
+  const [uploadingSignature, setUploadingSignature] = useState(false)
+  const [uploadError, setUploadError] = useState('')
+
+  const letterheadRef = useRef<HTMLInputElement>(null)
+  const signatureRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (profile) {
       setForm({
-        full_name: profile.full_name || '',
-        bar_council_no: profile.bar_council_no || '',
-        state_bar: profile.state_bar || '',
-        firm_name: profile.firm_name || '',
-        office_address: profile.office_address || '',
-        default_language: profile.default_language || 'en',
-        default_state: profile.default_state || '',
-        default_dispute: 'arbitration',
+        full_name: profile.full_name ?? '',
+        bar_council_no: profile.bar_council_no ?? '',
+        state_bar: profile.state_bar ?? '',
+        firm_name: profile.firm_name ?? '',
+        office_address: profile.office_address ?? '',
+        default_language: profile.default_language ?? 'en',
+        default_state: profile.default_state ?? '',
+        default_dispute: profile.default_dispute ?? 'arbitration',
+        letterhead_url: profile.letterhead_url ?? null,
+        signature_url: profile.signature_url ?? null,
+        email_notifications: profile.email_notifications ?? true,
       })
     }
   }, [profile])
 
-  const setField = (key: string, value: string) =>
+  const setField = <K extends keyof typeof form>(key: K, value: typeof form[K]) =>
     setForm(prev => ({ ...prev, [key]: value }))
+
+  const handleFileUpload = async (file: File, slot: 'letterhead' | 'signature') => {
+    if (!user) return
+    setUploadError('')
+
+    const maxBytes = 5 * 1024 * 1024 // 5 MB
+    if (file.size > maxBytes) {
+      setUploadError('File must be under 5 MB.')
+      return
+    }
+    const allowed = slot === 'letterhead'
+      ? ['image/png', 'image/jpeg', 'application/pdf']
+      : ['image/png', 'image/jpeg']
+    if (!allowed.includes(file.type)) {
+      setUploadError(slot === 'letterhead' ? 'Letterhead must be PNG, JPG or PDF.' : 'Signature must be PNG or JPG.')
+      return
+    }
+
+    if (slot === 'letterhead') setUploadingLetterhead(true)
+    else setUploadingSignature(true)
+
+    try {
+      const url = await uploadFile(user.id, file, slot)
+      setField(`${slot}_url`, url)
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Upload failed.')
+    } finally {
+      if (slot === 'letterhead') setUploadingLetterhead(false)
+      else setUploadingSignature(false)
+    }
+  }
+
+  const clearFile = async (slot: 'letterhead' | 'signature') => {
+    setField(`${slot}_url`, null)
+  }
 
   const handleSave = async () => {
     setSaving(true)
+    setSaveError('')
     try {
       await updateProfile({
         full_name: form.full_name,
@@ -50,18 +119,22 @@ export default function SettingsPage() {
         office_address: form.office_address,
         default_language: form.default_language,
         default_state: form.default_state,
+        default_dispute: form.default_dispute,
+        letterhead_url: form.letterhead_url,
+        signature_url: form.signature_url,
+        email_notifications: form.email_notifications,
       })
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (err) {
-      console.error(err)
+      setSaveError(err instanceof Error ? err.message : 'Save failed.')
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <div className="p-8 max-w-[1200px]">
+    <div className="p-4 md:p-8 max-w-[1200px]">
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-[32px] text-[#FAF7F0]" style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 400 }}>
@@ -74,7 +147,7 @@ export default function SettingsPage() {
 
       <div className="gold-line-solid mb-8" />
 
-      <div className="grid grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
         {/* Left — Profile */}
         <motion.div
           initial={{ opacity: 0, y: 12 }}
@@ -119,24 +192,91 @@ export default function SettingsPage() {
             </FormField>
 
             {/* Letterhead upload */}
-            <FormField label="Letterhead Upload" hint="PNG or PDF · Used in exported documents">
-              <div className="upload-zone p-4 flex items-center justify-center gap-3 cursor-pointer">
-                <Upload size={16} className="text-[rgba(201,168,76,0.5)]" />
-                <span className="text-[12px] text-[rgba(250,247,240,0.4)]" style={{ fontFamily: 'DM Mono, monospace' }}>
-                  UPLOAD LETTERHEAD
-                </span>
-              </div>
+            <FormField label="Letterhead" hint="PNG, JPG or PDF · Max 5 MB · Used in exported documents">
+              <input
+                ref={letterheadRef}
+                type="file"
+                accept=".png,.jpg,.jpeg,.pdf"
+                className="hidden"
+                onChange={e => { if (e.target.files?.[0]) handleFileUpload(e.target.files[0], 'letterhead') }}
+              />
+              {form.letterhead_url ? (
+                <div className="flex items-center gap-3 p-3 bg-[#161616] border border-[rgba(201,168,76,0.2)]">
+                  <ImageIcon size={14} className="text-[#C9A84C] shrink-0" />
+                  <span className="text-[11px] text-[rgba(250,247,240,0.6)] flex-1 truncate" style={{ fontFamily: 'DM Mono, monospace' }}>
+                    Letterhead uploaded
+                  </span>
+                  <button
+                    onClick={() => clearFile('letterhead')}
+                    className="text-[rgba(250,247,240,0.3)] hover:text-[#f87171] transition-colors"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => letterheadRef.current?.click()}
+                  disabled={uploadingLetterhead}
+                  className="upload-zone p-4 flex items-center justify-center gap-3 w-full cursor-pointer disabled:opacity-50"
+                >
+                  {uploadingLetterhead
+                    ? <div className="w-4 h-4 border border-[#C9A84C] border-t-transparent animate-spin" />
+                    : <Upload size={14} className="text-[rgba(201,168,76,0.5)]" />
+                  }
+                  <span className="text-[11px] text-[rgba(250,247,240,0.4)]" style={{ fontFamily: 'DM Mono, monospace' }}>
+                    {uploadingLetterhead ? 'UPLOADING…' : 'UPLOAD LETTERHEAD'}
+                  </span>
+                </button>
+              )}
             </FormField>
 
             {/* Signature upload */}
-            <FormField label="Signature Upload" hint="Optional · PNG with transparent background">
-              <div className="upload-zone p-4 flex items-center justify-center gap-3 cursor-pointer">
-                <Upload size={16} className="text-[rgba(201,168,76,0.5)]" />
-                <span className="text-[12px] text-[rgba(250,247,240,0.4)]" style={{ fontFamily: 'DM Mono, monospace' }}>
-                  UPLOAD SIGNATURE
-                </span>
-              </div>
+            <FormField label="Signature" hint="PNG or JPG · Max 5 MB · Transparent background recommended">
+              <input
+                ref={signatureRef}
+                type="file"
+                accept=".png,.jpg,.jpeg"
+                className="hidden"
+                onChange={e => { if (e.target.files?.[0]) handleFileUpload(e.target.files[0], 'signature') }}
+              />
+              {form.signature_url ? (
+                <div className="flex items-center gap-3 p-3 bg-[#161616] border border-[rgba(201,168,76,0.2)]">
+                  <img
+                    src={form.signature_url}
+                    alt="Signature preview"
+                    className="h-8 object-contain"
+                    style={{ background: 'transparent' }}
+                  />
+                  <span className="text-[11px] text-[rgba(250,247,240,0.6)] flex-1 truncate" style={{ fontFamily: 'DM Mono, monospace' }}>
+                    Signature uploaded
+                  </span>
+                  <button
+                    onClick={() => clearFile('signature')}
+                    className="text-[rgba(250,247,240,0.3)] hover:text-[#f87171] transition-colors"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => signatureRef.current?.click()}
+                  disabled={uploadingSignature}
+                  className="upload-zone p-4 flex items-center justify-center gap-3 w-full cursor-pointer disabled:opacity-50"
+                >
+                  {uploadingSignature
+                    ? <div className="w-4 h-4 border border-[#C9A84C] border-t-transparent animate-spin" />
+                    : <Upload size={14} className="text-[rgba(201,168,76,0.5)]" />
+                  }
+                  <span className="text-[11px] text-[rgba(250,247,240,0.4)]" style={{ fontFamily: 'DM Mono, monospace' }}>
+                    {uploadingSignature ? 'UPLOADING…' : 'UPLOAD SIGNATURE'}
+                  </span>
+                </button>
+              )}
             </FormField>
+
+            {uploadError && (
+              <p className="text-[11px] text-[#f87171]" style={{ fontFamily: 'DM Mono, monospace' }}>{uploadError}</p>
+            )}
           </div>
         </motion.div>
 
@@ -260,8 +400,19 @@ export default function SettingsPage() {
                   Document ready, usage alerts
                 </p>
               </div>
-              <button className="w-10 h-5 relative bg-[#1B3A2D] border border-[rgba(201,168,76,0.3)]">
-                <span className="absolute top-0.5 left-5 w-4 h-4 bg-[#C9A84C]" />
+              <button
+                onClick={() => setField('email_notifications', !form.email_notifications)}
+                className={`w-10 h-5 relative border transition-colors ${
+                  form.email_notifications
+                    ? 'bg-[#1B3A2D] border-[rgba(201,168,76,0.4)]'
+                    : 'bg-[#161616] border-[rgba(250,247,240,0.1)]'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 w-4 h-4 transition-all ${
+                    form.email_notifications ? 'left-5 bg-[#C9A84C]' : 'left-0.5 bg-[rgba(250,247,240,0.2)]'
+                  }`}
+                />
               </button>
             </div>
           </div>
@@ -291,6 +442,11 @@ export default function SettingsPage() {
           >
             Profile updated successfully
           </motion.p>
+        )}
+        {saveError && (
+          <p className="text-[12px] text-[#f87171]" style={{ fontFamily: 'DM Mono, monospace' }}>
+            {saveError}
+          </p>
         )}
       </div>
     </div>

@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { FileText, ArrowRight, Briefcase } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
-import { getClientDocuments, getClientCases, type Document, type Case } from '@/lib/supabase'
+import { getClientDocuments, getClientCases } from '@/lib/api'
+import type { Document, Case } from '@/lib/supabase'
 import { useAuditLog } from '@/lib/useAuditLog'
 import { formatDate } from '@/lib/utils'
 import { DocumentPreview } from '@/components/ui/DocumentPreview'
@@ -62,7 +63,7 @@ export default function ClientDashboardPage() {
     const recentDocs = documents.slice(0, 8)
 
     return (
-        <div className="p-8 max-w-[1400px]">
+        <div className="p-4 md:p-8 max-w-[1400px]">
             {/* Header */}
             <motion.div
                 initial={{ opacity: 0, y: 12 }}
@@ -96,7 +97,7 @@ export default function ClientDashboardPage() {
                     >
                         YOUR CASES
                     </p>
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
                         {cases.map((c, i) => (
                             <motion.div
                                 key={c.id}
@@ -172,7 +173,8 @@ export default function ClientDashboardPage() {
                         </p>
                     </div>
                 ) : (
-                    <div className="border border-[rgba(201,168,76,0.15)]">
+                    <div className="border border-[rgba(201,168,76,0.15)] overflow-x-auto">
+                     <div className="min-w-[540px]">
                         {/* Table header */}
                         <div className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-5 py-3 border-b border-[rgba(201,168,76,0.1)] bg-[#0a0a0a]">
                             {['Document Name', 'Type', 'Date', 'Status', 'View'].map((h) => (
@@ -223,6 +225,7 @@ export default function ClientDashboardPage() {
                                 </div>
                             </motion.div>
                         ))}
+                     </div>{/* end min-w wrapper */}
                     </div>
                 )}
             </div>

@@ -25,7 +25,7 @@ export function ClientSidebar() {
             initial={false}
             animate={{ width: expanded ? 240 : 64 }}
             transition={{ duration: 0.25, ease: 'easeInOut' }}
-            className="relative flex flex-col h-screen bg-[#0a0a0a] border-r border-[rgba(201,168,76,0.2)] overflow-hidden shrink-0 z-10"
+            className="relative hidden md:flex flex-col h-screen bg-[#0a0a0a] border-r border-[rgba(201,168,76,0.2)] overflow-hidden shrink-0 z-10"
             onMouseEnter={() => setExpanded(true)}
             onMouseLeave={() => setExpanded(false)}
         >

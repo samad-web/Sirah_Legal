@@ -300,7 +300,7 @@ export default function ReviewContractPage() {
   }
 
   return (
-    <div className="p-8 max-w-[1200px]">
+    <div className="p-4 md:p-8 max-w-[1200px]">
       {/* Header */}
       <div className="mb-8">
         <p className="text-[11px] tracking-widest text-[rgba(201,168,76,0.7)] mb-1" style={{ fontFamily: 'DM Mono, monospace' }}>
@@ -315,7 +315,7 @@ export default function ReviewContractPage() {
         <>
           {/* Upload zone */}
           <div
-            className={cn('upload-zone p-12 flex flex-col items-center justify-center text-center mb-6 cursor-pointer', dragOver && 'drag-over')}
+            className={cn('upload-zone p-6 md:p-12 flex flex-col items-center justify-center text-center mb-6 cursor-pointer', dragOver && 'drag-over')}
             onDragOver={e => { e.preventDefault(); setDragOver(true) }}
             onDragLeave={() => setDragOver(false)}
             onDrop={handleDrop}
@@ -375,7 +375,7 @@ export default function ReviewContractPage() {
               <p className="text-[12px] text-[rgba(250,247,240,0.5)] mb-3 text-center" style={{ fontFamily: 'Lora, serif' }}>
                 You are reviewing this contract as:
               </p>
-              <div className="grid grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {REVIEW_ROLES.map((r) => (
                   <SelectionCard
                     key={r.value}
@@ -421,7 +421,7 @@ export default function ReviewContractPage() {
             transition={{ duration: 0.4 }}
           >
             {/* Risk score banner */}
-            <div className="flex items-center gap-8 p-6 bg-[#161616] border border-[rgba(201,168,76,0.2)] mb-6">
+            <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-8 p-5 sm:p-6 bg-[#161616] border border-[rgba(201,168,76,0.2)] mb-6">
               <RiskScoreGauge score={analysis.riskScore} />
               <div className="flex-1">
                 <p className="text-[11px] tracking-widest text-[rgba(250,247,240,0.4)] mb-2" style={{ fontFamily: 'DM Mono, monospace' }}>
@@ -457,7 +457,7 @@ export default function ReviewContractPage() {
             </div>
 
             {/* Tabs */}
-            <div className="flex border-b border-[rgba(201,168,76,0.15)] mb-0">
+            <div className="flex overflow-x-auto border-b border-[rgba(201,168,76,0.15)] mb-0">
               {TABS.map(tab => (
                 <button
                   key={tab.id}

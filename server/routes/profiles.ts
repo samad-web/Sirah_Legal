@@ -1,13 +1,33 @@
 import { Router } from 'express'
 import type { Request, Response } from 'express'
-import { requireAuth, type AuthRequest } from '../middleware/auth.js'
+import { z } from 'zod'
+import { requireAuth } from '../middleware/auth.js'
+import type { AuthRequest } from '../middleware/auth.js'
 import { supabase } from '../lib/supabase.js'
+
+// ─── Schema ───────────────────────────────────────────────────────────────────
+
+const profileUpdateSchema = z.object({
+  full_name: z.string().max(255).nullable().optional(),
+  bar_council_no: z.string().max(100).nullable().optional(),
+  state_bar: z.string().max(100).nullable().optional(),
+  firm_name: z.string().max(255).nullable().optional(),
+  office_address: z.string().max(1000).nullable().optional(),
+  default_language: z.enum(['en', 'ta', 'hi']).optional(),
+  default_state: z.string().max(100).nullable().optional(),
+  default_dispute: z.string().max(50).nullable().optional(),
+  letterhead_url: z.string().url().nullable().optional(),
+  signature_url: z.string().url().nullable().optional(),
+  email_notifications: z.boolean().optional(),
+})
 
 export const profilesRouter = Router()
 
 profilesRouter.use(requireAuth)
 
 // GET /api/profiles/me
+// Note: requireAuth middleware already guarantees a profile row exists,
+// so PGRST116 (no rows) should not occur in normal operation.
 profilesRouter.get('/me', async (req: Request, res: Response): Promise<void> => {
   const userId = (req as AuthRequest).userId
 
@@ -28,12 +48,16 @@ profilesRouter.get('/me', async (req: Request, res: Response): Promise<void> => 
 // PATCH /api/profiles/me
 profilesRouter.patch('/me', async (req: Request, res: Response): Promise<void> => {
   const userId = (req as AuthRequest).userId
-  // Strip id from body — always use the one from the JWT
-  const { id: _ignored, ...updates } = req.body
+
+  const parsed = profileUpdateSchema.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues.map(i => i.message).join('; ') })
+    return
+  }
 
   const { data, error } = await supabase
     .from('profiles')
-    .upsert({ ...updates, id: userId })
+    .upsert({ ...parsed.data, id: userId })
     .select()
     .single()
 

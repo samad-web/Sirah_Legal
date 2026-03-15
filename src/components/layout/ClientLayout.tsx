@@ -1,19 +1,16 @@
 import { Navigate, Outlet, useLocation, NavLink } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { LayoutGrid, Folder, PenLine, Users, Settings } from 'lucide-react'
-import { Sidebar } from './Sidebar'
+import { LayoutGrid, Folder } from 'lucide-react'
+import { ClientSidebar } from './ClientSidebar'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
 
-const mobileNavItems = [
-  { to: '/dashboard', icon: <LayoutGrid size={20} />, label: 'Home' },
-  { to: '/draft/notice', icon: <PenLine size={20} />, label: 'Draft' },
-  { to: '/documents', icon: <Folder size={20} />, label: 'Docs' },
-  { to: '/clients', icon: <Users size={20} />, label: 'Clients' },
-  { to: '/settings', icon: <Settings size={20} />, label: 'Settings' },
+const clientMobileNav = [
+  { to: '/client/dashboard', icon: <LayoutGrid size={20} />, label: 'Home' },
+  { to: '/client/documents', icon: <Folder size={20} />, label: 'Documents' },
 ]
 
-export function AppLayout() {
+export function ClientLayout() {
   const { user, role, loading } = useAuth()
   const location = useLocation()
 
@@ -34,16 +31,15 @@ export function AppLayout() {
     return <Navigate to="/login" replace />
   }
 
-  if (role === 'client') {
-    return <Navigate to="/client/dashboard" replace />
+  if (role !== 'client') {
+    return <Navigate to="/dashboard" replace />
   }
 
   return (
     <div className="flex h-screen bg-[#0E0E0E] overflow-hidden">
-      {/* Persistent gold top line */}
       <div className="fixed top-0 left-0 right-0 h-[1px] bg-[rgba(201,168,76,0.45)] z-50" />
 
-      <Sidebar />
+      <ClientSidebar />
 
       <main className="flex-1 overflow-hidden relative">
         <AnimatePresence mode="wait">
@@ -62,16 +58,14 @@ export function AppLayout() {
 
       {/* Mobile bottom navigation */}
       <nav className="fixed bottom-0 left-0 right-0 md:hidden bg-[#0a0a0a] border-t border-[rgba(201,168,76,0.2)] z-50 flex">
-        {mobileNavItems.map((item) => (
+        {clientMobileNav.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             className={({ isActive }) =>
               cn(
                 'flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors',
-                isActive
-                  ? 'text-[#C9A84C]'
-                  : 'text-[rgba(250,247,240,0.4)]'
+                isActive ? 'text-[#C9A84C]' : 'text-[rgba(250,247,240,0.4)]'
               )
             }
           >

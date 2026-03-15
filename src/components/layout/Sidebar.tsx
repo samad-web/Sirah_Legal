@@ -12,6 +12,7 @@ import {
   LogOut,
   ChevronRight,
   Scale,
+  Users,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
@@ -29,6 +30,7 @@ const navItems: NavItem[] = [
   { to: '/review/contract', icon: <ShieldCheck size={18} />, label: 'Review Contract' },
   { to: '/draft/title-report', icon: <MapPin size={18} />, label: 'Title Report' },
   { to: '/documents', icon: <Folder size={18} />, label: 'Documents' },
+  { to: '/clients', icon: <Users size={18} />, label: 'Manage Clients' },
 ]
 
 export function Sidebar() {
@@ -46,7 +48,7 @@ export function Sidebar() {
       initial={false}
       animate={{ width: expanded ? 240 : 64 }}
       transition={{ duration: 0.25, ease: 'easeInOut' }}
-      className="relative flex flex-col h-screen bg-[#0a0a0a] border-r border-[rgba(201,168,76,0.2)] overflow-hidden shrink-0 z-10"
+      className="relative hidden md:flex flex-col h-screen bg-[#0a0a0a] border-r border-[rgba(201,168,76,0.2)] overflow-hidden shrink-0 z-10"
       onMouseEnter={() => setExpanded(true)}
       onMouseLeave={() => setExpanded(false)}
     >

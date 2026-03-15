@@ -2,7 +2,8 @@ import { useEffect, useState, useMemo, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Search, Download, FileText, Eye, X } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
-import { getClientDocuments, type Document } from '@/lib/supabase'
+import { getClientDocuments } from '@/lib/api'
+import type { Document } from '@/lib/supabase'
 import { useAuditLog } from '@/lib/useAuditLog'
 import { Input } from '@/components/ui/FormFields'
 import { DocumentPreview } from '@/components/ui/DocumentPreview'
@@ -73,7 +74,7 @@ export default function ClientDocumentsPage() {
     }
 
     return (
-        <div className="p-8">
+        <div className="p-4 md:p-8">
             {/* Header */}
             <div className="mb-8">
                 <h1 className="text-[32px] text-[#FAF7F0] mb-1" style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 400 }}>
@@ -150,7 +151,8 @@ export default function ClientDocumentsPage() {
                     </p>
                 </div>
             ) : (
-                <div className="border border-[rgba(201,168,76,0.15)]">
+                <div className="border border-[rgba(201,168,76,0.15)] overflow-x-auto">
+                 <div className="min-w-[560px]">
                     {/* Table header */}
                     <div className="grid grid-cols-[2.5fr_1fr_1fr_1fr_auto] gap-3 px-4 py-3 bg-[#0a0a0a] border-b border-[rgba(201,168,76,0.1)]">
                         {['Document Name', 'Type', 'Created', 'Language', 'Actions'].map(h => (
@@ -192,6 +194,7 @@ export default function ClientDocumentsPage() {
                             </div>
                         </motion.div>
                     ))}
+                 </div>{/* end min-w wrapper */}
                 </div>
             )}
 
@@ -202,7 +205,7 @@ export default function ClientDocumentsPage() {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="fixed inset-0 bg-[rgba(0,0,0,0.8)] z-50 flex items-center justify-center p-8"
+                        className="fixed inset-0 bg-[rgba(0,0,0,0.8)] z-50 flex items-end sm:items-center justify-center p-0 sm:p-8"
                         onClick={e => e.target === e.currentTarget && setPreviewDoc(null)}
                     >
                         <motion.div

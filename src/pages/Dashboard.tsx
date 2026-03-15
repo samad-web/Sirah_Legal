@@ -70,8 +70,8 @@ export default function DashboardPage() {
 
   const fetchDocuments = useCallback(() => {
     if (!user) return
-    getUserDocuments(user.id)
-      .then(setDocuments)
+    getUserDocuments(user.id, { limit: 10 })
+      .then(r => setDocuments(r.data))
       .catch(err => console.error('[LexDraft] Dashboard: failed to load documents:', err))
       .finally(() => setLoadingDocs(false))
   }, [user])
@@ -95,10 +95,10 @@ export default function DashboardPage() {
     }
   }
 
-  const recentDocs = documents.slice(0, 10)
+  const recentDocs = documents
 
   return (
-    <div className="p-8 max-w-[1400px]">
+    <div className="p-4 md:p-8 max-w-[1400px]">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: 12 }}
@@ -134,7 +134,7 @@ export default function DashboardPage() {
         >
           QUICK ACTIONS
         </p>
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
           {quickActions.map((action, i) => (
             <motion.div
               key={action.to}
@@ -233,7 +233,8 @@ export default function DashboardPage() {
             </p>
           </div>
         ) : (
-          <div className="border border-[rgba(201,168,76,0.15)]">
+          <div className="border border-[rgba(201,168,76,0.15)] overflow-x-auto">
+            <div className="min-w-[560px]">
             {/* Table header */}
             <div className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-5 py-3 border-b border-[rgba(201,168,76,0.1)] bg-[#0a0a0a]">
               {['Document Name', 'Type', 'Date', 'Status', 'Actions'].map((h) => (
@@ -301,6 +302,7 @@ export default function DashboardPage() {
                 </div>
               </motion.div>
             ))}
+            </div>{/* end min-w wrapper */}
           </div>
         )}
       </div>

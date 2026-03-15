@@ -8,10 +8,9 @@ import {
     getCases, createCase, deleteCase, updateCase,
     getClientProfiles, assignClientToCase, removeClientFromCase,
     getUserDocuments, linkDocumentToCase, unlinkDocumentFromCase,
-    getLinkedCaseDocumentIds, getClientsForCase,
-    type Case, type Profile, type Document,
-} from '@/lib/supabase'
-import { supabase } from '@/lib/supabase'
+    getLinkedCaseDocumentIds, getClientsForCase, resetClientPassword,
+} from '@/lib/api'
+import type { Case, Profile, Document } from '@/lib/supabase'
 import { Button } from '@/components/ui/Button'
 import { FormField, Input, Textarea } from '@/components/ui/FormFields'
 import { cn } from '@/lib/utils'
@@ -56,14 +55,14 @@ export default function ManageClientsPage() {
     const fetchAll = useCallback(async () => {
         if (!user) return
         try {
-            const [c, cl, docs] = await Promise.all([
+            const [c, cl, docsResult] = await Promise.all([
                 getCases(user.id),
                 getClientProfiles(user.id),
-                getUserDocuments(user.id),
+                getUserDocuments(user.id, { limit: 200 }),
             ])
             setCases(c)
             setClients(cl)
-            setMyDocs(docs)
+            setMyDocs(docsResult.data)
         } catch (err) {
             console.error('[LexDraft] ManageClients: failed to load data:', err)
         } finally {
@@ -86,7 +85,7 @@ export default function ManageClientsPage() {
     const handleCreateCase = async () => {
         if (!user || !caseTitle.trim()) return
         try {
-            const c = await createCase(user.id, caseTitle.trim(), caseDesc.trim())
+            const c = await createCase({ title: caseTitle.trim(), description: caseDesc.trim() || undefined })
             setCases(prev => [c, ...prev])
             setCaseTitle('')
             setCaseDesc('')
@@ -178,15 +177,17 @@ export default function ManageClientsPage() {
         })
     }
 
-    const handleResetPassword = async (email: string) => {
-        await supabase.auth.resetPasswordForEmail(email, {
-            redirectTo: `${window.location.origin}/reset-password`,
-        })
-        alert(`Password reset email sent to ${email}`)
+    const handleResetPassword = async (clientId: string) => {
+        try {
+            const { email } = await resetClientPassword(clientId)
+            alert(`Password reset email sent to ${email}`)
+        } catch (err) {
+            alert(err instanceof Error ? err.message : 'Failed to send reset email')
+        }
     }
 
     return (
-        <div className="p-8 max-w-[1400px]">
+        <div className="p-4 md:p-8 max-w-[1400px]">
             {/* Header */}
             <div className="mb-8">
                 <h1 className="text-[32px] text-[#FAF7F0] mb-1" style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 400 }}>
@@ -204,7 +205,7 @@ export default function ManageClientsPage() {
                     <div className="w-6 h-6 border border-[#C9A84C] border-t-transparent animate-spin" />
                 </div>
             ) : (
-                <div className="grid grid-cols-[1fr_1fr] gap-8">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
                     {/* ── Left: Cases ── */}
                     <div>
                         <div className="flex items-center justify-between mb-4">
@@ -382,7 +383,7 @@ export default function ManageClientsPage() {
                                                 </p>
                                             </div>
                                             <button
-                                                onClick={() => handleResetPassword(client.full_name || '')}
+                                                onClick={() => handleResetPassword(client.id)}
                                                 className="flex items-center gap-1.5 text-[10px] text-[rgba(250,247,240,0.35)] hover:text-[#C9A84C] transition-colors"
                                                 style={{ fontFamily: 'DM Mono, monospace' }}
                                                 title="Send password reset email"

@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
-import { logDocumentAccess } from '@/lib/supabase'
+import { logDocumentAccess } from '@/lib/api'
 
 /**
  * A lightweight hook for audit logging document access.
