@@ -43,13 +43,21 @@ export default function DocumentsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [previewDoc, setPreviewDoc] = useState<Document | null>(null)
 
-  const fetchPage = useCallback(async (pageNum: number, replace: boolean) => {
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+
+  // Debounce search input — wait 350ms after the user stops typing
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 350)
+    return () => clearTimeout(t)
+  }, [search])
+
+  const fetchPage = useCallback(async (pageNum: number, replace: boolean, searchTerm = debouncedSearch) => {
     if (!user) return
     if (replace) setLoading(true)
     else setLoadingMore(true)
 
     try {
-      const result = await getUserDocuments(user.id, { page: pageNum, limit: PAGE_SIZE })
+      const result = await getUserDocuments(user.id, { page: pageNum, limit: PAGE_SIZE, search: searchTerm || undefined })
       setTotal(result.total)
       setDocuments(prev => replace ? result.data : [...prev, ...result.data])
       setPage(pageNum)
@@ -59,27 +67,29 @@ export default function DocumentsPage() {
       setLoading(false)
       setLoadingMore(false)
     }
-  }, [user])
+  }, [user, debouncedSearch])
 
+  // Re-fetch from page 1 whenever debounced search changes (also handles initial load)
   useEffect(() => {
-    fetchPage(1, true)
-  }, [fetchPage])
+    fetchPage(1, true, debouncedSearch)
+  }, [debouncedSearch]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Reactively refresh when any draft page saves a document
+  // Refresh when a document is saved from a draft page
   useEffect(() => {
     const onSaved = () => fetchPage(1, true)
     window.addEventListener('lexdraft:document-saved', onSaved)
     return () => window.removeEventListener('lexdraft:document-saved', onSaved)
   }, [fetchPage])
 
+  // Type and language filtering is client-side (enum values on already-loaded data).
+  // Text search is server-side via the debounced API call above.
   const filtered = useMemo(() => {
     return documents.filter(doc => {
-      const matchSearch = !search || doc.title.toLowerCase().includes(search.toLowerCase())
       const matchType = filterType === 'all' || doc.type === filterType
       const matchLang = filterLang === 'all' || doc.language === filterLang
-      return matchSearch && matchType && matchLang
+      return matchType && matchLang
     })
-  }, [documents, search, filterType, filterLang])
+  }, [documents, filterType, filterLang])
 
   const hasMore = documents.length < total
 

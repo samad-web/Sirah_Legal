@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import rateLimit from 'express-rate-limit'
 import { z } from 'zod'
 import { supabase } from '../lib/supabase.js'
 import { requireAuth, requireLawyer } from '../middleware/auth.js'
@@ -9,12 +10,30 @@ export const clientsRouter = Router()
 // All routes: lawyer only
 clientsRouter.use(requireAuth, requireLawyer)
 
+// Tighter rate limit for client-management write operations (creates, resets)
+const clientWriteLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 20,
+  keyGenerator: (req) => {
+    const userId = (req as AuthRequest).userId
+    if (userId) return userId
+    const ip = req.ip
+    return (Array.isArray(ip) ? ip[0] : ip) ?? 'unknown'
+  },
+  message: { error: 'Too many client management requests. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
 // ─── Schemas ─────────────────────────────────────────────────────────────────
 
 const createClientSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
-  full_name: z.string().min(1),
+  email: z.email(),
+  password: z.string().min(8).refine(
+    (val) => /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(val),
+    { message: 'Password must contain at least one uppercase letter, one lowercase letter, and one number' },
+  ),
+  full_name: z.string().min(1).max(255),
 })
 
 // ─── GET /api/clients ─────────────────────────────────────────────────────────
@@ -40,10 +59,15 @@ clientsRouter.get('/', async (req, res, next) => {
 // ─── POST /api/clients ────────────────────────────────────────────────────────
 // Creates a new client auth user + profile row
 
-clientsRouter.post('/', async (req, res, next) => {
+clientsRouter.post('/', clientWriteLimiter, async (req, res, next) => {
   try {
     const { userId } = req as AuthRequest
-    const { email, password, full_name } = createClientSchema.parse(req.body)
+    const parsed = createClientSchema.safeParse(req.body)
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues.map(i => i.message).join('; ') })
+      return
+    }
+    const { email, password, full_name } = parsed.data
 
     // Create auth user with client role in metadata
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
@@ -63,9 +87,10 @@ clientsRouter.post('/', async (req, res, next) => {
     // Create profile row for the new client.
     // Must include role: 'client' — the column defaults to 'lawyer' which
     // would give the client advocate-level access in profile-based checks.
+    // Use upsert: the handle_new_user trigger may have already created the row.
     const { error: profileError } = await supabase
       .from('profiles')
-      .insert({
+      .upsert({
         id: newUserId,
         full_name,
         role: 'client',
@@ -78,6 +103,8 @@ clientsRouter.post('/', async (req, res, next) => {
 
     if (profileError) throw profileError
 
+    console.log(`[audit] client created: lawyerId=${userId} clientId=${newUserId} email=${email} ip=${req.ip}`)
+
     res.status(201).json({ userId: newUserId, email })
   } catch (err) {
     next(err)
@@ -88,7 +115,7 @@ clientsRouter.post('/', async (req, res, next) => {
 // Sends a password reset email for a client using the admin API (which has
 // access to the user's email from auth.users without needing it in profiles).
 
-clientsRouter.post('/:id/reset-password', async (req, res, next) => {
+clientsRouter.post('/:id/reset-password', clientWriteLimiter, async (req, res, next) => {
   try {
     const { userId } = req as AuthRequest
     const { id: clientId } = req.params
@@ -107,7 +134,7 @@ clientsRouter.post('/:id/reset-password', async (req, res, next) => {
     }
 
     // Get the user's email from auth.users via admin API
-    const { data: authUser, error: authError } = await supabase.auth.admin.getUserById(clientId)
+    const { data: authUser, error: authError } = await supabase.auth.admin.getUserById(String(clientId))
     if (authError || !authUser?.user?.email) {
       res.status(500).json({ error: 'Could not retrieve client email' })
       return
@@ -121,6 +148,8 @@ clientsRouter.post('/:id/reset-password', async (req, res, next) => {
     })
 
     if (resetError) throw resetError
+
+    console.log(`[audit] password reset triggered: lawyerId=${userId} clientId=${clientId} ip=${req.ip}`)
 
     res.json({ success: true, email: authUser.user.email })
   } catch (err) {

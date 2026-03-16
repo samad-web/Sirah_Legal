@@ -44,6 +44,33 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   return res.json() as Promise<T>
 }
 
+// ─── File upload (multipart — bypasses apiFetch's JSON Content-Type) ─────────
+
+export async function uploadAdvocateFile(
+  file: File,
+  slot: 'letterhead' | 'signature',
+): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) throw new Error('Not authenticated')
+
+  const form = new FormData()
+  form.append('file', file)
+  form.append('slot', slot)
+
+  const res = await fetch(`${BASE}/profiles/upload-file`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${session.access_token}` },
+    body: form,
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(text || `Upload error ${res.status}`)
+  }
+  const { url } = await res.json() as { url: string }
+  return url
+}
+
 // ─── Profile ─────────────────────────────────────────────────────────────────
 
 export async function getProfile(_userId?: string): Promise<Profile | null> {
@@ -72,10 +99,12 @@ export interface PaginatedDocuments {
 
 export async function getUserDocuments(
   _userId?: string,
-  opts: { page?: number; limit?: number } = {},
+  opts: { page?: number; limit?: number; search?: string } = {},
 ): Promise<PaginatedDocuments> {
-  const { page = 1, limit = 20 } = opts
-  return apiFetch<PaginatedDocuments>(`/documents?page=${page}&limit=${limit}`)
+  const { page = 1, limit = 20, search } = opts
+  const params = new URLSearchParams({ page: String(page), limit: String(limit) })
+  if (search) params.set('search', search)
+  return apiFetch<PaginatedDocuments>(`/documents?${params}`)
 }
 
 export async function saveDocument(

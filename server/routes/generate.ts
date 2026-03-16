@@ -4,6 +4,7 @@ import rateLimit from 'express-rate-limit'
 import { z } from 'zod'
 import { requireAuth } from '../middleware/auth.js'
 import type { AuthRequest } from '../middleware/auth.js'
+import { enforceQuota } from '../middleware/quota.js'
 
 const OPENAI_BASE = 'https://api.openai.com/v1'
 const OPENAI_MODEL = 'gpt-4o-mini'
@@ -119,7 +120,7 @@ End with: "DISCLAIMER: This document is AI-assisted. It must be reviewed and app
 const generateSchema = z.object({
   module: z.enum(['notice', 'contract', 'title-report', 'contract-review']),
   language: z.enum(['en', 'ta', 'hi']),
-  payload: z.record(z.unknown()),
+  payload: z.record(z.string(), z.unknown()),
 })
 
 // ─── Rate limiter (per user, keyed on JWT userId) ─────────────────────────────
@@ -127,18 +128,22 @@ const generateSchema = z.object({
 const generateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10,
-  keyGenerator: (req) => (req as AuthRequest).userId ?? req.ip ?? 'unknown',
+  keyGenerator: (req) => {
+    const userId = (req as AuthRequest).userId
+    if (userId) return userId
+    const ip = req.ip
+    return (Array.isArray(ip) ? ip[0] : ip) ?? 'unknown'
+  },
   message: { error: 'Too many generation requests. You can generate up to 10 documents per 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
-  // Skip rate limiting for contract-review since it's a single non-streaming call
-  skip: (req) => (req.body as { module?: string })?.module === 'contract-review',
 })
 
 export const generateRouter = Router()
 
-// requireAuth MUST come before generateLimiter so userId is available for key generation
+// requireAuth → enforceQuota → generateLimiter (order matters: auth first so userId is available)
 generateRouter.use(requireAuth)
+generateRouter.use(enforceQuota)
 generateRouter.use(generateLimiter)
 
 generateRouter.post('/', async (req: Request, res: Response): Promise<void> => {
@@ -276,7 +281,11 @@ generateRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     res.setHeader('Cache-Control', 'no-cache')
     res.setHeader('Connection', 'keep-alive')
 
-    const reader = openaiRes.body!.getReader()
+    if (!openaiRes.body) {
+      res.status(502).json({ error: 'OpenAI returned an empty stream body' })
+      return
+    }
+    const reader = openaiRes.body.getReader()
     const decoder = new TextDecoder()
 
     try {

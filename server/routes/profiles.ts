@@ -1,9 +1,21 @@
 import { Router } from 'express'
 import type { Request, Response } from 'express'
 import { z } from 'zod'
+import multer from 'multer'
 import { requireAuth } from '../middleware/auth.js'
 import type { AuthRequest } from '../middleware/auth.js'
 import { supabase } from '../lib/supabase.js'
+
+const STORAGE_BUCKET = 'advocate-files'
+const ALLOWED_MIME: Record<string, string[]> = {
+  letterhead: ['image/png', 'image/jpeg', 'application/pdf'],
+  signature:  ['image/png', 'image/jpeg'],
+}
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+})
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -16,8 +28,8 @@ const profileUpdateSchema = z.object({
   default_language: z.enum(['en', 'ta', 'hi']).optional(),
   default_state: z.string().max(100).nullable().optional(),
   default_dispute: z.string().max(50).nullable().optional(),
-  letterhead_url: z.string().url().nullable().optional(),
-  signature_url: z.string().url().nullable().optional(),
+  letterhead_url: z.url().nullable().optional(),
+  signature_url: z.url().nullable().optional(),
   email_notifications: z.boolean().optional(),
 })
 
@@ -68,6 +80,38 @@ profilesRouter.patch('/me', async (req: Request, res: Response): Promise<void> =
 
   res.json(data)
 })
+
+// POST /api/profiles/upload-file
+// Handles letterhead / signature uploads server-side using the service-role key,
+// bypassing frontend RLS entirely.
+profilesRouter.post(
+  '/upload-file',
+  upload.single('file'),
+  async (req: Request, res: Response): Promise<void> => {
+    const userId = (req as AuthRequest).userId
+    const slot = req.body?.slot as string
+
+    if (!req.file) { res.status(400).json({ error: 'No file uploaded' }); return }
+    if (slot !== 'letterhead' && slot !== 'signature') {
+      res.status(400).json({ error: 'slot must be letterhead or signature' }); return
+    }
+    if (!ALLOWED_MIME[slot].includes(req.file.mimetype)) {
+      res.status(400).json({ error: `Invalid file type for ${slot}` }); return
+    }
+
+    const ext = (req.file.originalname.split('.').pop() ?? 'bin').toLowerCase()
+    const path = `${userId}/${slot}.${ext}`
+
+    const { error } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(path, req.file.buffer, { contentType: req.file.mimetype, upsert: true })
+
+    if (error) { res.status(500).json({ error: error.message }); return }
+
+    const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path)
+    res.json({ url: `${data.publicUrl}?t=${Date.now()}` })
+  },
+)
 
 // POST /api/profiles/increment-count
 profilesRouter.post('/increment-count', async (req: Request, res: Response): Promise<void> => {

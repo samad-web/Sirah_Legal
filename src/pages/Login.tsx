@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Eye, EyeOff, Scale } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
@@ -19,8 +19,15 @@ export default function LoginPage() {
   const [unconfirmed, setUnconfirmed] = useState(false)
   const [resendSent, setResendSent] = useState(false)
 
-  const { signIn, signUp, signInWithGoogle } = useAuth()
-  const navigate = useNavigate()
+  const { signIn, signUp, signInWithGoogle, user, loading: authLoading } = useAuth()
+
+  // Auth-state-driven redirect: once Supabase confirms the session, navigate away.
+  // This avoids the race condition where navigate() fires before onAuthStateChange
+  // has committed the new user state, causing AppLayout to see user=null and
+  // redirect back to /login.
+  if (!authLoading && user) {
+    return <Navigate to="/home" replace />
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -33,7 +40,9 @@ export default function LoginPage() {
       } else {
         await signUp(email, password, fullName)
       }
-      navigate('/dashboard')
+      // Navigation is handled above by the auth-state redirect.
+      // Do not call navigate() here — the state update from onAuthStateChange
+      // may not be committed yet, so an imperative navigate would race with it.
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Authentication failed'
       if (msg.toLowerCase().includes('email not confirmed')) {

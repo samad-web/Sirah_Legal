@@ -152,10 +152,10 @@ export default function TitleReportPage() {
             language: lang,
             payload: { prompt: buildTitlePrompt(form, uploadedFiles, date, lang) },
           },
-          (chunk) => setDocuments(prev => ({ ...prev, [lang]: chunk }))
+          (chunk) => setDocuments(prev => ({ ...prev, [lang]: chunk } as Record<string, string>))
         )
         if (result.document) {
-          setDocuments(prev => ({ ...prev, [lang]: result.document }))
+          setDocuments(prev => ({ ...prev, [lang]: result.document } as Record<string, string>))
           if (user) {
             saveDocument({
               user_id: user.id, title, type: 'title-report', language: lang,

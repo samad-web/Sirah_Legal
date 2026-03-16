@@ -72,8 +72,8 @@ async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
     const content = await page.getTextContent()
     // TextItem has `str`; MarkedContent does not — filter safely
     const pageText = content.items
-      .filter((item): item is { str: string } & Record<string, unknown> => 'str' in item)
-      .map(item => item.str)
+      .filter(item => 'str' in item)
+      .map(item => (item as unknown as { str: string }).str)
       .join(' ')
     pages.push(pageText)
   }

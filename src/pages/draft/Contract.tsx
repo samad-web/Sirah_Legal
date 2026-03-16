@@ -196,10 +196,10 @@ export default function DraftContractPage() {
       try {
         const result = await generateDocument(
           { module: 'contract', language: lang, payload: { prompt: buildContractPrompt(form, date, lang) } },
-          (chunk) => setDocuments(prev => ({ ...prev, [lang]: chunk }))
+          (chunk) => setDocuments(prev => ({ ...prev, [lang]: chunk } as Record<string, string>))
         )
         if (result.document) {
-          setDocuments(prev => ({ ...prev, [lang]: result.document }))
+          setDocuments(prev => ({ ...prev, [lang]: result.document } as Record<string, string>))
           if (user) {
             saveDocument({
               user_id: user.id, title, type: 'contract', language: lang,

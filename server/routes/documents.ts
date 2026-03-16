@@ -3,6 +3,7 @@ import type { Request, Response } from 'express'
 import { z } from 'zod'
 import { requireAuth } from '../middleware/auth.js'
 import type { AuthRequest } from '../middleware/auth.js'
+import { enforceQuota } from '../middleware/quota.js'
 import { supabase } from '../lib/supabase.js'
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -11,7 +12,7 @@ const documentCreateSchema = z.object({
   title: z.string().min(1, 'Title is required').max(500),
   type: z.enum(['notice', 'contract', 'title-report', 'contract-review']),
   language: z.enum(['en', 'ta', 'hi']),
-  content: z.string(),
+  content: z.string().max(500_000, 'Document content exceeds maximum allowed size'),
   analysis: z.record(z.string(), z.unknown()).nullable().optional(),
   status: z.enum(['draft', 'exported', 'shared']).optional().default('draft'),
 })
@@ -21,6 +22,7 @@ const documentUpdateSchema = documentCreateSchema.partial()
 const paginationSchema = z.object({
   page: z.coerce.number().int().min(1).optional().default(1),
   limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+  search: z.string().max(200).optional(),
 })
 
 export const documentsRouter = Router()
@@ -36,15 +38,21 @@ documentsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
     res.status(400).json({ error: 'Invalid pagination params' })
     return
   }
-  const { page, limit } = pageResult.data
+  const { page, limit, search } = pageResult.data
   const offset = (page - 1) * limit
 
-  const { data, error, count } = await supabase
+  let query = supabase
     .from('documents')
     .select('*', { count: 'exact' })
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
+
+  if (search) {
+    query = query.textSearch('search_vector', search, { type: 'websearch' })
+  }
+
+  const { data, error, count } = await query
 
   if (error) {
     res.status(500).json({ error: error.message })
@@ -55,7 +63,7 @@ documentsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
 })
 
 // POST /api/documents
-documentsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
+documentsRouter.post('/', enforceQuota, async (req: Request, res: Response): Promise<void> => {
   const userId = (req as AuthRequest).userId
 
   const parsed = documentCreateSchema.safeParse(req.body)

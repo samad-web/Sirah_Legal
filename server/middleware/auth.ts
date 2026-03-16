@@ -8,10 +8,13 @@ export interface AuthRequest extends Request {
 }
 
 const jwtSecret = process.env.SUPABASE_JWT_SECRET
+const supabaseUrl = process.env.SUPABASE_URL
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY
 
-// Per-process cache: once a profile has been confirmed to exist this session,
-// skip the DB check on subsequent requests from the same user.
-const profileEnsured = new Set<string>()
+// Per-process role cache: avoids a DB round-trip on every request.
+// Populated on first request per user; evicted on server restart.
+// Role changes in the DB take effect after server restart (acceptable trade-off).
+const roleCache = new Map<string, string>()
 
 // Verify a Supabase HS256 JWT locally using the project JWT secret.
 // Falls back to a Supabase network call when the secret is not configured.
@@ -36,16 +39,43 @@ function verifyJWT(token: string): { sub: string; user_metadata?: Record<string,
   }
 }
 
-// Upsert a minimal profile row so FK constraints (cases.lawyer_id, etc.) are
-// always satisfied. ignoreDuplicates = true means existing rows are untouched.
-async function ensureProfile(userId: string, role: string): Promise<void> {
-  await supabase
-    .from('profiles')
-    .upsert(
-      { id: userId, role, default_language: 'en', plan: 'free', documents_this_month: 0, email_notifications: true },
-      { onConflict: 'id', ignoreDuplicates: true },
-    )
-  profileEnsured.add(userId)
+// Fetch the authoritative role from the profiles table and ensure the row
+// exists. The role in JWT user_metadata is user-writable and cannot be trusted
+// for authorization decisions. Returns the DB role, falling back to jwtRole if
+// the DB is unavailable.
+async function getAuthorizedRole(userId: string, jwtRole: string): Promise<string> {
+  // Cache hit: avoid a DB call on every request
+  const cached = roleCache.get(userId)
+  if (cached !== undefined) return cached
+
+  try {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .single()
+
+    if (profile?.role) {
+      const role = profile.role as string
+      roleCache.set(userId, role)
+      return role
+    }
+
+    // Profile doesn't exist yet — create it and use the JWT role as the initial role
+    await supabase.from('profiles').insert({
+      id: userId,
+      role: jwtRole,
+      default_language: 'en',
+      plan: 'free',
+      documents_this_month: 0,
+      email_notifications: true,
+    })
+    roleCache.set(userId, jwtRole)
+    return jwtRole
+  } catch (err) {
+    console.error('[auth] getAuthorizedRole failed, falling back to JWT role:', err)
+    return jwtRole
+  }
 }
 
 export async function requireAuth(
@@ -60,40 +90,51 @@ export async function requireAuth(
   }
 
   let userId: string
-  let userRole: string
+  let jwtRole: string
 
   const local = verifyJWT(token)
   if (local) {
     // Fast path: verified locally, no network call
     userId = local.sub
-    userRole = (local.user_metadata?.role as string) ?? 'lawyer'
+    jwtRole = (local.user_metadata?.role as string) ?? 'lawyer'
   } else {
-    // Fallback: verify via Supabase (used when SUPABASE_JWT_SECRET is not set)
-    const { data: { user }, error } = await supabase.auth.getUser(token)
-    if (error || !user) {
+    // Fallback: verify via Supabase Auth REST API using the anon key.
+    // The service-role client's auth.getUser() does NOT work for user JWT
+    // verification — Supabase's /auth/v1/user endpoint requires the project
+    // anon key as `apikey`, not the service-role key.
+    if (!supabaseUrl || !supabaseAnonKey) {
+      res.status(401).json({ error: 'Server auth misconfiguration' })
+      return
+    }
+    let authUser: { id: string; user_metadata?: Record<string, unknown> } | null = null
+    try {
+      const resp = await fetch(`${supabaseUrl}/auth/v1/user`, {
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${token}`,
+        },
+      })
+      if (resp.ok) {
+        authUser = await resp.json() as { id: string; user_metadata?: Record<string, unknown> }
+      }
+    } catch {
+      // network error — fall through to 401
+    }
+    if (!authUser?.id) {
       res.status(401).json({ error: 'Invalid or expired token' })
       return
     }
-    userId = user.id
-    userRole = (user.user_metadata?.role as string) ?? 'lawyer'
+    userId = authUser.id
+    jwtRole = (authUser.user_metadata?.role as string) ?? 'lawyer'
   }
+
+  // Resolve the authoritative role from the DB (JWT metadata is user-writable
+  // and must not be used for authorization decisions).
+  const userRole = await getAuthorizedRole(userId, jwtRole)
 
   const authReq = req as AuthRequest
   authReq.userId = userId
   authReq.userRole = userRole
-
-  // Ensure the profile row exists before any route handler touches tables
-  // that FK-reference profiles (cases, case_assignments, audit_logs, etc.)
-  // Wrapped in try/catch: a failure here must never crash the server process.
-  if (!profileEnsured.has(userId)) {
-    try {
-      await ensureProfile(userId, userRole)
-    } catch (err) {
-      console.error('[auth] ensureProfile failed (non-fatal):', err)
-      // Don't block the request — the route will fail with a proper error
-      // if it actually needs a profile row.
-    }
-  }
 
   next()
 }

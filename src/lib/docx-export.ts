@@ -52,12 +52,11 @@ function classifyLine(raw: string): { type: LineType; text: string } {
 }
 
 // ─── Paragraph builders ───────────────────────────────────────────────────────
-function bodyPara(text: string, extra?: ConstructorParameters<typeof Paragraph>[0]): Paragraph {
+function bodyPara(text: string): Paragraph {
   return new Paragraph({
     children: [new TextRun({ text, size: BODY_PT, font: FONT })],
     alignment: AlignmentType.JUSTIFIED,
     spacing: { line: LINE_SPACING, after: PARA_AFTER },
-    ...extra,
   })
 }
 
