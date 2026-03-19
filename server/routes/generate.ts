@@ -128,12 +128,7 @@ const generateSchema = z.object({
 const generateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10,
-  keyGenerator: (req) => {
-    const userId = (req as AuthRequest).userId
-    if (userId) return userId
-    const ip = req.ip
-    return (Array.isArray(ip) ? ip[0] : ip) ?? 'unknown'
-  },
+  keyGenerator: (req) => (req as AuthRequest).userId ?? 'unknown',
   message: { error: 'Too many generation requests. You can generate up to 10 documents per 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,

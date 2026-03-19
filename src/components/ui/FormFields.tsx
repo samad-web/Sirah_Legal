@@ -13,20 +13,20 @@ export function FormField({ label, required, error, children, hint }: FormFieldP
   return (
     <div className="space-y-1.5">
       <label
-        className="flex items-center gap-1 text-[11px] tracking-widest text-[rgba(250,247,240,0.7)] uppercase"
+        className="flex items-center gap-1 text-[11px] tracking-widest text-muted uppercase"
         style={{ fontFamily: 'DM Mono, monospace' }}
       >
         {label}
-        {required && <span className="text-[#C9A84C]">*</span>}
+        {required && <span className="text-gold">*</span>}
       </label>
       {children}
       {hint && (
-        <p className="text-[10px] text-[rgba(250,247,240,0.35)]" style={{ fontFamily: 'DM Mono, monospace' }}>
+        <p className="text-[10px] text-muted/70" style={{ fontFamily: 'DM Mono, monospace' }}>
           {hint}
         </p>
       )}
       {error && (
-        <p className="text-[10px] text-[#f87171]" style={{ fontFamily: 'DM Mono, monospace' }}>
+        <p className="text-[10px] text-red-400" style={{ fontFamily: 'DM Mono, monospace' }}>
           {error}
         </p>
       )}
@@ -43,8 +43,8 @@ export function Input({ className, ...props }: InputProps) {
     <input
       {...props}
       className={cn(
-        'w-full h-9 px-3 bg-[#161616] border border-[rgba(201,168,76,0.25)] text-[#FAF7F0]',
-        'text-[12px] focus:border-[rgba(201,168,76,0.7)] transition-colors',
+        'w-full h-9 px-3 bg-surface-2 border border-border text-foreground',
+        'text-[12px] focus:border-gold/70 transition-colors',
         className
       )}
       style={{ fontFamily: 'DM Mono, monospace', ...props.style }}
@@ -66,8 +66,8 @@ export function Textarea({ className, showCounter, maxWords, value, ...props }: 
         {...props}
         value={value}
         className={cn(
-          'w-full px-3 py-2 bg-[#161616] border border-[rgba(201,168,76,0.25)] text-[#FAF7F0]',
-          'text-[12px] focus:border-[rgba(201,168,76,0.7)] transition-colors resize-none',
+          'w-full px-3 py-2 bg-surface-2 border border-border text-foreground',
+          'text-[12px] focus:border-gold/70 transition-colors resize-none',
           className
         )}
         style={{ fontFamily: 'DM Mono, monospace', ...props.style }}
@@ -76,7 +76,7 @@ export function Textarea({ className, showCounter, maxWords, value, ...props }: 
         <span
           className={cn(
             'absolute bottom-2 right-2 text-[10px]',
-            wordCount > maxWords ? 'text-[#f87171]' : 'text-[rgba(250,247,240,0.3)]'
+            wordCount > maxWords ? 'text-red-400' : 'text-muted/60'
           )}
           style={{ fontFamily: 'DM Mono, monospace' }}
         >
@@ -97,8 +97,8 @@ export function Select({ options, placeholder, className, ...props }: SelectProp
     <select
       {...props}
       className={cn(
-        'w-full h-9 px-3 bg-[#161616] border border-[rgba(201,168,76,0.25)] text-[#FAF7F0]',
-        'text-[12px] focus:border-[rgba(201,168,76,0.7)] transition-colors',
+        'w-full h-9 px-3 bg-surface-2 border border-border text-foreground',
+        'text-[12px] focus:border-gold/70 transition-colors',
         className
       )}
       style={{ fontFamily: 'DM Mono, monospace', ...props.style }}
@@ -130,17 +130,21 @@ export function ProgressSteps({ steps, current, onStepClick }: ProgressStepsProp
             className={cn(
               'flex items-center gap-2 px-3 py-1.5 text-[11px] border transition-all',
               i === current
-                ? 'bg-[#1B3A2D] border-[rgba(201,168,76,0.5)] text-[#F5EDD6]'
+                ? 'bg-forest border-gold-dim text-parchment'
                 : i < current
-                ? 'border-transparent text-[rgba(250,247,240,0.5)] hover:text-[#FAF7F0] cursor-pointer'
-                : 'border-transparent text-[rgba(250,247,240,0.25)] cursor-not-allowed'
+                ? 'border-transparent text-muted hover:text-foreground cursor-pointer'
+                : 'border-transparent text-muted/50 cursor-not-allowed'
             )}
             style={{ fontFamily: 'DM Mono, monospace' }}
           >
             <span
               className={cn(
                 'w-5 h-5 flex items-center justify-center text-[9px] border',
-                i === current ? 'border-[#C9A84C] text-[#C9A84C]' : i < current ? 'border-[rgba(201,168,76,0.4)] text-[rgba(201,168,76,0.6)]' : 'border-[rgba(250,247,240,0.2)] text-[rgba(250,247,240,0.25)]'
+                i === current
+                  ? 'border-gold text-gold'
+                  : i < current
+                  ? 'border-gold/40 text-gold/60'
+                  : 'border-muted/40 text-muted/50'
               )}
             >
               {String(i + 1).padStart(2, '0')}
@@ -148,7 +152,7 @@ export function ProgressSteps({ steps, current, onStepClick }: ProgressStepsProp
             {step}
           </button>
           {i < steps.length - 1 && (
-            <span className="text-[rgba(250,247,240,0.2)] px-1" style={{ fontFamily: 'DM Mono, monospace' }}>
+            <span className="text-muted/40 px-1" style={{ fontFamily: 'DM Mono, monospace' }}>
               →
             </span>
           )}
@@ -173,22 +177,22 @@ export function SelectionCard({ selected, onClick, title, description, className
       className={cn(
         'text-left w-full p-4 border transition-all duration-150',
         selected
-          ? 'bg-[#1B3A2D] border-[rgba(201,168,76,0.6)] shadow-[0_0_0_1px_rgba(201,168,76,0.2)]'
-          : 'bg-[#161616] border-[rgba(201,168,76,0.2)] hover:border-[rgba(201,168,76,0.4)] hover:bg-[#1c1c1c]',
+          ? 'bg-forest border-gold/60 shadow-[0_0_0_1px_rgba(201,168,76,0.2)]'
+          : 'bg-surface-2 border-border hover:border-gold/40 hover:bg-surface-3',
         className
       )}
     >
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <p
-            className={cn('text-[13px]', selected ? 'text-[#F5EDD6]' : 'text-[#FAF7F0]')}
+            className={cn('text-[13px]', selected ? 'text-parchment' : 'text-foreground')}
             style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 500 }}
           >
             {title}
           </p>
           {description && (
             <p
-              className="text-[11px] text-[rgba(250,247,240,0.45)] mt-1"
+              className="text-[11px] text-muted mt-1"
               style={{ fontFamily: 'DM Mono, monospace' }}
             >
               {description}
@@ -198,7 +202,7 @@ export function SelectionCard({ selected, onClick, title, description, className
         <span
           className={cn(
             'w-4 h-4 border mt-0.5 flex items-center justify-center shrink-0',
-            selected ? 'border-[#C9A84C] bg-[#C9A84C]' : 'border-[rgba(201,168,76,0.3)]'
+            selected ? 'border-gold bg-gold' : 'border-gold/30'
           )}
         >
           {selected && (

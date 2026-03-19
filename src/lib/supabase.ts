@@ -57,6 +57,17 @@ export interface Document {
   updated_at: string
 }
 
+export interface CaseTimelineEvent {
+  id: string
+  case_id: string
+  lawyer_id: string
+  title: string
+  description: string | null
+  event_date: string        // YYYY-MM-DD
+  event_type: 'hearing' | 'filing' | 'order' | 'milestone' | 'payment' | 'notice'
+  created_at: string
+}
+
 export interface DocumentFile {
   id: string
   document_id: string
@@ -64,4 +75,100 @@ export interface DocumentFile {
   file_type: string
   storage_path: string
   uploaded_at: string
+}
+
+export interface CaseNote {
+  id: string
+  case_id: string
+  lawyer_id: string
+  content: string
+  created_at: string
+  updated_at: string
+}
+
+export interface CaseMessage {
+  id: string
+  case_id: string
+  sender_id: string
+  content: string
+  read_at: string | null
+  created_at: string
+  sender?: { id: string; full_name: string | null; role: string }
+}
+
+export interface DocumentRequest {
+  id: string
+  case_id: string
+  lawyer_id: string
+  client_id: string
+  title: string
+  description: string | null
+  status: 'pending' | 'fulfilled' | 'cancelled'
+  created_at: string
+  fulfilled_at: string | null
+  client?: { id: string; full_name: string | null }
+  case?: { id: string; title: string }
+}
+
+export interface ClauseLibraryItem {
+  id: string
+  lawyer_id: string
+  title: string
+  content: string
+  category: string | null
+  tags: string[] | null
+  created_at: string
+}
+
+export interface DocumentVersion {
+  id: string
+  document_id: string
+  content?: string
+  version_number: number
+  created_by: string | null
+  created_at: string
+}
+
+export interface CaseStatusHistory {
+  id: string
+  case_id: string
+  old_status: string | null
+  new_status: string
+  changed_by: string | null
+  note: string | null
+  created_at: string
+}
+
+export interface AuditLog {
+  id: string
+  user_id: string
+  document_id: string
+  action: string
+  created_at: string
+  client?: { id: string; full_name: string | null }
+  document?: { id: string; title: string }
+}
+
+export interface IntakeFormField {
+  id: string
+  label: string
+  type: 'text' | 'email' | 'tel' | 'textarea' | 'date'
+  required?: boolean
+}
+
+export interface IntakeForm {
+  id: string
+  lawyer_id: string
+  case_id: string | null
+  title: string
+  fields: IntakeFormField[]
+  created_at: string
+}
+
+export interface IntakeSubmission {
+  id: string
+  form_id: string
+  respondent_email: string | null
+  data: Record<string, unknown>
+  submitted_at: string
 }

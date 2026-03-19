@@ -15,6 +15,12 @@ import SettingsPage from '@/pages/Settings'
 import ManageClientsPage from '@/pages/clients/ManageClients'
 import ClientDashboardPage from '@/pages/client/Dashboard'
 import ClientDocumentsPage from '@/pages/client/Documents'
+import CalendarPage from '@/pages/Calendar'
+import MessagesPage from '@/pages/Messages'
+import ClausesPage from '@/pages/Clauses'
+import StampDutyPage from '@/pages/StampDuty'
+import ECourtsPage from '@/pages/ECourts'
+import IntakePage from '@/pages/Intake'
 
 function RoleRedirect() {
   const { user, role, loading } = useAuth()
@@ -33,12 +39,17 @@ export default function App() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
 
+        {/* Public intake form (no auth required) */}
+        <Route path="/intake/:formId" element={<IntakePage />} />
+
         {/* Role-based redirect after login */}
         <Route path="/home" element={<RoleRedirect />} />
 
         {/* Advocate routes — wrapped in AppLayout (auth guard + advocate sidebar) */}
         <Route element={<AppLayout />}>
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/calendar" element={<CalendarPage />} />
+          <Route path="/messages" element={<MessagesPage />} />
           <Route path="/draft/notice" element={<DraftNoticePage />} />
           <Route path="/draft/contract" element={<DraftContractPage />} />
           <Route path="/review/contract" element={<ReviewContractPage />} />
@@ -46,6 +57,9 @@ export default function App() {
           <Route path="/documents" element={<DocumentsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/clients" element={<ManageClientsPage />} />
+          <Route path="/clauses" element={<ClausesPage />} />
+          <Route path="/stamp-duty" element={<StampDutyPage />} />
+          <Route path="/ecourts" element={<ECourtsPage />} />
         </Route>
 
         {/* Client routes — wrapped in ClientLayout (auth guard + client sidebar) */}

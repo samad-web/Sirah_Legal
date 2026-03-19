@@ -1,11 +1,14 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, Trash2, Download, FileText, Eye, X, ChevronDown } from 'lucide-react'
+import { Search, Trash2, Download, FileText, Eye, X, ChevronDown, History } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { getUserDocuments, deleteDocument } from '@/lib/api'
 import type { Document } from '@/lib/supabase'
+import type { DocumentVersion } from '@/lib/supabase'
+import { getDocumentVersions } from '@/lib/api-additions'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/FormFields'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { DocumentPreview } from '@/components/ui/DocumentPreview'
 import { formatDate, cn } from '@/lib/utils'
 import { exportToPdf } from '@/lib/pdf-export'
@@ -42,6 +45,13 @@ export default function DocumentsPage() {
   const [filterLang, setFilterLang] = useState<FilterLang>('all')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [previewDoc, setPreviewDoc] = useState<Document | null>(null)
+  const [confirmDialog, setConfirmDialog] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null)
+
+  // Version history state
+  const [versionsDoc, setVersionsDoc] = useState<Document | null>(null)
+  const [versions, setVersions] = useState<DocumentVersion[]>([])
+  const [loadingVersions, setLoadingVersions] = useState(false)
+  const [previewVersion, setPreviewVersion] = useState<DocumentVersion | null>(null)
 
   const [debouncedSearch, setDebouncedSearch] = useState('')
 
@@ -109,24 +119,58 @@ export default function DocumentsPage() {
     }
   }
 
-  const handleBulkDelete = async () => {
-    if (!confirm(`Delete ${selectedIds.size} documents?`)) return
-    await Promise.all([...selectedIds].map(id => deleteDocument(id)))
-    setDocuments(docs => docs.filter(d => !selectedIds.has(d.id)))
-    setTotal(t => t - selectedIds.size)
-    setSelectedIds(new Set())
+  const handleBulkDelete = () => {
+    setConfirmDialog({
+      title: `Delete ${selectedIds.size} Documents`,
+      message: `${selectedIds.size} document${selectedIds.size !== 1 ? 's' : ''} will be permanently deleted.`,
+      onConfirm: async () => {
+        setConfirmDialog(null)
+        await Promise.all([...selectedIds].map(id => deleteDocument(id)))
+        setDocuments(docs => docs.filter(d => !selectedIds.has(d.id)))
+        setTotal(t => t - selectedIds.size)
+        setSelectedIds(new Set())
+      },
+    })
   }
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this document?')) return
-    await deleteDocument(id)
-    setDocuments(docs => docs.filter(d => d.id !== id))
-    setTotal(t => t - 1)
-    setPreviewDoc(null)
+  const handleDelete = (id: string) => {
+    setConfirmDialog({
+      title: 'Delete Document',
+      message: 'This document will be permanently deleted.',
+      onConfirm: async () => {
+        setConfirmDialog(null)
+        await deleteDocument(id)
+        setDocuments(docs => docs.filter(d => d.id !== id))
+        setTotal(t => t - 1)
+        setPreviewDoc(null)
+      },
+    })
+  }
+
+  const openVersionHistory = async (doc: Document) => {
+    setVersionsDoc(doc)
+    setVersions([])
+    setPreviewVersion(null)
+    setLoadingVersions(true)
+    try {
+      const v = await getDocumentVersions(doc.id)
+      setVersions(v)
+    } catch {
+      setVersions([])
+    } finally {
+      setLoadingVersions(false)
+    }
   }
 
   return (
     <div className="p-4 md:p-8">
+      <ConfirmDialog
+        open={!!confirmDialog}
+        title={confirmDialog?.title ?? ''}
+        message={confirmDialog?.message ?? ''}
+        onConfirm={confirmDialog?.onConfirm ?? (() => {})}
+        onCancel={() => setConfirmDialog(null)}
+      />
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-[32px] text-[#FAF7F0] mb-1" style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 400 }}>
@@ -270,6 +314,9 @@ export default function DocumentsPage() {
                   <button onClick={() => setPreviewDoc(doc)} className="p-1.5 text-[rgba(250,247,240,0.4)] hover:text-[#FAF7F0]" title="Preview">
                     <Eye size={12} />
                   </button>
+                  <button onClick={() => openVersionHistory(doc)} className="p-1.5 text-[rgba(250,247,240,0.4)] hover:text-[#FAF7F0]" title="Version History">
+                    <History size={12} />
+                  </button>
                   <button onClick={() => doc.content && exportToPdf(doc.content, doc.title, profile)} className="p-1.5 text-[rgba(250,247,240,0.4)] hover:text-[#FAF7F0]" title="Export PDF">
                     <Download size={12} />
                   </button>
@@ -298,6 +345,101 @@ export default function DocumentsPage() {
           )}
         </>
       )}
+
+      {/* Version history modal */}
+      <AnimatePresence>
+        {versionsDoc && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-[rgba(0,0,0,0.85)] z-50 flex items-center justify-center p-4 md:p-8"
+            onClick={e => e.target === e.currentTarget && setVersionsDoc(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.96, y: 16 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.96, y: 16 }}
+              className="bg-[#0E0E0E] border border-[rgba(201,168,76,0.3)] w-full max-w-3xl flex flex-col"
+              style={{ maxHeight: '85vh' }}
+            >
+              <div className="flex items-center justify-between px-5 py-3 border-b border-[rgba(201,168,76,0.2)] bg-[#0a0a0a] shrink-0">
+                <div>
+                  <p className="text-[11px] tracking-widest text-gold/70 mb-0.5" style={{ fontFamily: 'DM Mono, monospace' }}>VERSION HISTORY</p>
+                  <p className="text-[14px] text-foreground" style={{ fontFamily: 'Cormorant Garamond, serif' }}>{versionsDoc.title}</p>
+                </div>
+                <button onClick={() => { setVersionsDoc(null); setPreviewVersion(null) }} className="p-1.5 text-muted hover:text-foreground">
+                  <X size={14} />
+                </button>
+              </div>
+
+              {previewVersion ? (
+                <div className="flex flex-col flex-1 overflow-hidden">
+                  <div className="flex items-center gap-3 px-5 py-2.5 border-b border-border/40 bg-surface shrink-0">
+                    <button onClick={() => setPreviewVersion(null)} className="text-[11px] text-gold hover:text-gold/80 transition-colors" style={{ fontFamily: 'DM Mono, monospace' }}>
+                      ← BACK TO LIST
+                    </button>
+                    <span className="text-[11px] text-muted" style={{ fontFamily: 'DM Mono, monospace' }}>
+                      {new Date(previewVersion.created_at).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                  <div className="flex-1 overflow-auto p-5">
+                    <pre className="text-[12px] text-foreground/80 whitespace-pre-wrap leading-relaxed" style={{ fontFamily: 'Lora, serif' }}>
+                      {previewVersion.content}
+                    </pre>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex-1 overflow-auto">
+                  {loadingVersions ? (
+                    <div className="flex items-center justify-center py-16">
+                      <div className="w-5 h-5 border border-gold border-t-transparent animate-spin" />
+                    </div>
+                  ) : versions.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-center">
+                      <History size={28} className="text-muted/30 mb-3" />
+                      <p className="text-[14px] text-muted" style={{ fontFamily: 'Cormorant Garamond, serif' }}>No saved versions yet.</p>
+                      <p className="text-[11px] text-muted/50 mt-1" style={{ fontFamily: 'DM Mono, monospace' }}>
+                        A snapshot is saved each time the document content is edited.
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      {versions.map((v, i) => (
+                        <div
+                          key={v.id}
+                          className="flex items-center justify-between px-5 py-3.5 border-b border-border/20 last:border-0 hover:bg-surface transition-colors group"
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="w-7 h-7 flex items-center justify-center border border-border/40 bg-surface-2 shrink-0">
+                              <span className="text-[10px] text-muted" style={{ fontFamily: 'DM Mono, monospace' }}>v{versions.length - i}</span>
+                            </div>
+                            <div>
+                              <p className="text-[12px] text-foreground" style={{ fontFamily: 'DM Mono, monospace' }}>
+                                {new Date(v.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              </p>
+                              <p className="text-[10px] text-muted mt-0.5" style={{ fontFamily: 'DM Mono, monospace' }}>
+                                {v.content ? `${v.content.length.toLocaleString()} chars` : '—'}
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => setPreviewVersion(v)}
+                            className="text-[10px] text-gold/70 hover:text-gold border border-gold/20 hover:border-gold/50 px-3 py-1.5 transition-all opacity-0 group-hover:opacity-100"
+                            style={{ fontFamily: 'DM Mono, monospace' }}
+                          >
+                            VIEW
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Preview modal */}
       <AnimatePresence>

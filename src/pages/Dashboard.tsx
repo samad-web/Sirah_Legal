@@ -3,13 +3,14 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   FileText, PenLine, ShieldCheck, MapPin,
-  ArrowRight, Download, Trash2, FileDown, MoreHorizontal
+  ArrowRight, Download, Trash2, AlertTriangle
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { getUserDocuments, deleteDocument } from '@/lib/api'
 import type { Document } from '@/lib/supabase'
-import { Button } from '@/components/ui/Button'
 import { formatDate } from '@/lib/utils'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { exportToPdf } from '@/lib/pdf-export'
 
 const quickActions = [
   {
@@ -62,11 +63,20 @@ function getGreeting() {
   return 'Good evening'
 }
 
+function getDaysUntilExpiry(expiryDate: string): number {
+  const now = new Date()
+  now.setHours(0, 0, 0, 0)
+  const exp = new Date(expiryDate)
+  exp.setHours(0, 0, 0, 0)
+  return Math.ceil((exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+}
+
 export default function DashboardPage() {
   const { profile } = useAuth()
   const [documents, setDocuments] = useState<Document[]>([])
   const [loadingDocs, setLoadingDocs] = useState(true)
   const { user } = useAuth()
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
   const fetchDocuments = useCallback(() => {
     if (!user) return
@@ -88,17 +98,25 @@ export default function DashboardPage() {
     return () => window.removeEventListener('lexdraft:document-saved', onSaved)
   }, [fetchDocuments])
 
-  const handleDelete = async (id: string) => {
-    if (confirm('Delete this document?')) {
-      await deleteDocument(id)
-      setDocuments(docs => docs.filter(d => d.id !== id))
-    }
+  const handleDelete = (id: string) => setConfirmDelete(id)
+  const doDelete = async () => {
+    if (!confirmDelete) return
+    await deleteDocument(confirmDelete)
+    setDocuments(docs => docs.filter(d => d.id !== confirmDelete))
+    setConfirmDelete(null)
   }
 
   const recentDocs = documents
 
   return (
     <div className="p-4 md:p-8 max-w-[1400px]">
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title="Delete Document"
+        message="This document will be permanently deleted."
+        onConfirm={doDelete}
+        onCancel={() => setConfirmDelete(null)}
+      />
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: 12 }}
@@ -183,6 +201,7 @@ export default function DashboardPage() {
           </p>
           <p className="text-[11px] text-[rgba(250,247,240,0.5)]" style={{ fontFamily: 'DM Mono, monospace' }}>
             {profile?.documents_this_month || 0} / {profile?.plan === 'free' ? 5 : profile?.plan === 'solo' ? 50 : '∞'}
+            {(profile?.plan === 'premium' || profile?.plan === 'pro') && <span className="ml-2 text-[#C9A84C]">PREMIUM</span>}
           </p>
         </div>
         <div className="h-1 bg-[rgba(250,247,240,0.05)] w-full">
@@ -199,6 +218,52 @@ export default function DashboardPage() {
           </p>
         )}
       </div>
+
+      {/* Expiring documents */}
+      {(() => {
+        const expiring = documents.filter(d => {
+          const doc = d as Document & { expiry_date?: string }
+          if (!doc.expiry_date) return false
+          const days = getDaysUntilExpiry(doc.expiry_date)
+          return days >= 0 && days <= 30
+        })
+        if (expiring.length === 0) return null
+        return (
+          <div className="mb-10">
+            <div className="flex items-center gap-2 mb-4">
+              <AlertTriangle size={14} className="text-[#fbbf24]" />
+              <p className="text-[11px] tracking-widest text-[#fbbf24]" style={{ fontFamily: 'DM Mono, monospace' }}>
+                EXPIRING SOON
+              </p>
+            </div>
+            <div className="border border-[rgba(251,191,36,0.25)] bg-[rgba(251,191,36,0.04)]">
+              {expiring.map((d, i) => {
+                const doc = d as Document & { expiry_date?: string }
+                const days = getDaysUntilExpiry(doc.expiry_date!)
+                return (
+                  <div
+                    key={doc.id}
+                    className={`flex items-center justify-between px-5 py-3 ${i < expiring.length - 1 ? 'border-b border-[rgba(251,191,36,0.15)]' : ''}`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <FileText size={13} className="text-[#fbbf24] shrink-0" />
+                      <span className="text-[13px] text-[#FAF7F0] truncate" style={{ fontFamily: 'Cormorant Garamond, serif' }}>
+                        {doc.title}
+                      </span>
+                    </div>
+                    <span
+                      className={`text-[10px] border px-2 py-0.5 shrink-0 ml-4 ${days <= 7 ? 'text-[#f87171] border-[rgba(248,113,113,0.4)]' : 'text-[#fbbf24] border-[rgba(251,191,36,0.35)]'}`}
+                      style={{ fontFamily: 'DM Mono, monospace' }}
+                    >
+                      {days === 0 ? 'EXPIRES TODAY' : `${days}D LEFT`}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Recent documents */}
       <div>
@@ -281,16 +346,11 @@ export default function DashboardPage() {
                 </span>
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
+                    onClick={() => exportToPdf(doc.content, doc.title, profile)}
                     className="p-1.5 text-[rgba(250,247,240,0.4)] hover:text-[#FAF7F0] hover:bg-[#1B3A2D] transition-colors"
                     title="Download"
                   >
                     <Download size={13} />
-                  </button>
-                  <button
-                    className="p-1.5 text-[rgba(250,247,240,0.4)] hover:text-[#FAF7F0] hover:bg-[#222] transition-colors"
-                    title="More"
-                  >
-                    <MoreHorizontal size={13} />
                   </button>
                   <button
                     onClick={() => handleDelete(doc.id)}

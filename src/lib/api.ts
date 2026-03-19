@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { Profile, Document, Case } from './supabase'
+import type { Profile, Document, Case, CaseTimelineEvent } from './supabase'
 
 const BASE = '/api'
 
@@ -205,6 +205,45 @@ export async function getClientCases(_userId?: string): Promise<Case[]> {
 
 export async function getClientDocuments(_userId?: string): Promise<Document[]> {
   return apiFetch<Document[]>('/client/documents')
+}
+
+export async function getClientCaseTimeline(caseId: string): Promise<CaseTimelineEvent[]> {
+  return apiFetch<CaseTimelineEvent[]>(`/client/cases/${caseId}/timeline`)
+}
+
+export async function getClientCaseDocuments(caseId: string): Promise<Document[]> {
+  return apiFetch<Document[]>(`/client/cases/${caseId}/documents`)
+}
+
+// ─── Timeline management (lawyer) ────────────────────────────────────────────
+
+export async function getCaseTimeline(caseId: string): Promise<CaseTimelineEvent[]> {
+  return apiFetch<CaseTimelineEvent[]>(`/cases/${caseId}/timeline`)
+}
+
+export async function createTimelineEvent(
+  caseId: string,
+  data: { title: string; description?: string; event_date: string; event_type: CaseTimelineEvent['event_type'] },
+): Promise<CaseTimelineEvent> {
+  return apiFetch<CaseTimelineEvent>(`/cases/${caseId}/timeline`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function updateTimelineEvent(
+  caseId: string,
+  eventId: string,
+  data: Partial<{ title: string; description: string; event_date: string; event_type: CaseTimelineEvent['event_type'] }>,
+): Promise<CaseTimelineEvent> {
+  return apiFetch<CaseTimelineEvent>(`/cases/${caseId}/timeline/${eventId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function deleteTimelineEvent(caseId: string, eventId: string): Promise<void> {
+  await apiFetch<{ success: boolean }>(`/cases/${caseId}/timeline/${eventId}`, { method: 'DELETE' })
 }
 
 export async function logDocumentAccess(

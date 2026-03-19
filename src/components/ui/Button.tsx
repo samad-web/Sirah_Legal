@@ -19,14 +19,14 @@ export function Button({
   ...props
 }: ButtonProps) {
   const base =
-    'inline-flex items-center justify-center gap-2 font-medium transition-all duration-150 select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border'
+    'inline-flex items-center justify-center gap-2 font-medium transition-all duration-150 select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C9A84C]'
 
   const variants = {
-    primary: 'bg-[#1B3A2D] border-[#1B3A2D] text-[#F5EDD6] hover:bg-[#2a5842] hover:border-[#2a5842]',
-    outline: 'bg-transparent border-[rgba(201,168,76,0.5)] text-[#FAF7F0] hover:border-[#C9A84C] hover:bg-[rgba(201,168,76,0.05)]',
-    ghost: 'bg-transparent border-transparent text-[rgba(250,247,240,0.6)] hover:text-[#FAF7F0] hover:bg-[#161616]',
-    danger: 'bg-transparent border-[rgba(248,113,113,0.4)] text-[#f87171] hover:bg-[rgba(248,113,113,0.1)]',
-    gold: 'bg-[#C9A84C] border-[#C9A84C] text-[#0E0E0E] hover:bg-[#d4b558]',
+    primary: 'bg-forest border-forest text-parchment hover:bg-forest-light hover:border-forest-light',
+    outline: 'bg-transparent border-gold/50 text-foreground hover:border-gold hover:bg-gold-faint',
+    ghost: 'bg-transparent border-transparent text-muted hover:text-foreground hover:bg-surface-2',
+    danger: 'bg-transparent border-red-400/40 text-red-400 hover:bg-red-400/10',
+    gold: 'bg-gold border-gold text-[#0E0E0E] hover:bg-[#d4b558]',
   }
 
   const sizes = {

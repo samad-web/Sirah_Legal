@@ -7,6 +7,8 @@ const PLAN_LIMITS: Record<string, number> = {
   free: 5,
   solo: 50,
   pro: Infinity,
+  premium: Infinity,
+  firm: Infinity,
 }
 
 export async function enforceQuota(

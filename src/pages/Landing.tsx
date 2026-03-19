@@ -212,6 +212,7 @@ export default function LandingPage() {
                   size="lg"
                   className="border-[#C9A84C] text-[#C9A84C] text-[12px]"
                   style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '16px' }}
+                  onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}
                 >
                   See Demo
                 </Button>
@@ -393,15 +394,9 @@ export default function LandingPage() {
             LexDraft
           </span>
           <div className="flex items-center gap-6">
-            <Link to="#" className="text-[11px] text-[rgba(250,247,240,0.4)] hover:text-[rgba(250,247,240,0.8)] nav-hover-gold" style={{ fontFamily: 'DM Mono, monospace' }}>
-              PRIVACY
-            </Link>
-            <Link to="#" className="text-[11px] text-[rgba(250,247,240,0.4)] hover:text-[rgba(250,247,240,0.8)] nav-hover-gold" style={{ fontFamily: 'DM Mono, monospace' }}>
-              TERMS
-            </Link>
-            <Link to="#" className="text-[11px] text-[rgba(250,247,240,0.4)] hover:text-[rgba(250,247,240,0.8)] nav-hover-gold" style={{ fontFamily: 'DM Mono, monospace' }}>
-              CONTACT
-            </Link>
+            <span className="text-[11px] text-[rgba(250,247,240,0.25)] cursor-default" style={{ fontFamily: 'DM Mono, monospace' }} title="Coming soon">PRIVACY</span>
+            <span className="text-[11px] text-[rgba(250,247,240,0.25)] cursor-default" style={{ fontFamily: 'DM Mono, monospace' }} title="Coming soon">TERMS</span>
+            <span className="text-[11px] text-[rgba(250,247,240,0.25)] cursor-default" style={{ fontFamily: 'DM Mono, monospace' }} title="Coming soon">CONTACT</span>
           </div>
           <span className="hidden sm:block text-[11px] text-[rgba(250,247,240,0.3)]" style={{ fontFamily: 'DM Mono, monospace' }}>
             MADE FOR INDIAN ADVOCATES

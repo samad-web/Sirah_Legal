@@ -19,10 +19,10 @@ export function AppLayout() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-[#0E0E0E]">
+      <div className="flex items-center justify-center h-screen bg-background">
         <div className="text-center">
-          <div className="w-8 h-8 border border-[#C9A84C] border-t-transparent animate-spin mx-auto mb-4" />
-          <p className="text-[12px] text-[rgba(250,247,240,0.5)]" style={{ fontFamily: 'DM Mono, monospace' }}>
+          <div className="w-8 h-8 border border-gold border-t-transparent animate-spin mx-auto mb-4" />
+          <p className="text-[12px] text-muted" style={{ fontFamily: 'DM Mono, monospace' }}>
             LOADING...
           </p>
         </div>
@@ -39,9 +39,9 @@ export function AppLayout() {
   }
 
   return (
-    <div className="flex h-screen bg-[#0E0E0E] overflow-hidden">
+    <div className="flex h-screen bg-background overflow-hidden">
       {/* Persistent gold top line */}
-      <div className="fixed top-0 left-0 right-0 h-[1px] bg-[rgba(201,168,76,0.45)] z-50" />
+      <div className="fixed top-0 left-0 right-0 h-[1px] bg-gold/45 z-50" />
 
       <Sidebar />
 
@@ -61,7 +61,7 @@ export function AppLayout() {
       </main>
 
       {/* Mobile bottom navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 md:hidden bg-[#0a0a0a] border-t border-[rgba(201,168,76,0.2)] z-50 flex">
+      <nav className="fixed bottom-0 left-0 right-0 md:hidden bg-surface border-t border-border z-50 flex">
         {mobileNavItems.map((item) => (
           <NavLink
             key={item.to}
@@ -69,9 +69,7 @@ export function AppLayout() {
             className={({ isActive }) =>
               cn(
                 'flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors',
-                isActive
-                  ? 'text-[#C9A84C]'
-                  : 'text-[rgba(250,247,240,0.4)]'
+                isActive ? 'text-gold' : 'text-muted/80'
               )
             }
           >

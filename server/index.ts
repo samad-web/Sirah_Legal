@@ -13,6 +13,13 @@ import { generateRouter } from './routes/generate.js'
 import { casesRouter } from './routes/cases.js'
 import { clientsRouter } from './routes/clients.js'
 import { clientRouter } from './routes/client.js'
+import { remindersRouter } from './routes/reminders.js'
+import { messagesRouter } from './routes/messages.js'
+import { documentRequestsRouter } from './routes/documentRequests.js'
+import { clausesRouter } from './routes/clauses.js'
+import { auditLogsRouter } from './routes/auditLogs.js'
+import { intakeFormsRouter } from './routes/intakeForms.js'
+import { ecourtsRouter } from './routes/ecourts.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -86,6 +93,13 @@ app.use('/api/generate', generateRouter)
 app.use('/api/cases', casesRouter)
 app.use('/api/clients', clientsRouter)
 app.use('/api/client', clientRouter)
+app.use('/api/reminders', remindersRouter)
+app.use('/api/messages', messagesRouter)
+app.use('/api/document-requests', documentRequestsRouter)
+app.use('/api/clauses', clausesRouter)
+app.use('/api/audit-logs', auditLogsRouter)
+app.use('/api/intake-forms', intakeFormsRouter)
+app.use('/api/ecourts', ecourtsRouter)
 
 // Health check — no sensitive info exposed to unauthenticated callers
 app.get('/api/health', (_req, res) => {

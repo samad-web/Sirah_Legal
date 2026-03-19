@@ -14,12 +14,7 @@ clientsRouter.use(requireAuth, requireLawyer)
 const clientWriteLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 20,
-  keyGenerator: (req) => {
-    const userId = (req as AuthRequest).userId
-    if (userId) return userId
-    const ip = req.ip
-    return (Array.isArray(ip) ? ip[0] : ip) ?? 'unknown'
-  },
+  keyGenerator: (req) => (req as AuthRequest).userId ?? 'unknown',
   message: { error: 'Too many client management requests. Please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -80,7 +75,20 @@ clientsRouter.post('/', clientWriteLimiter, async (req, res, next) => {
       },
     })
 
-    if (authError) throw authError
+    if (authError) {
+      // Map common Supabase auth error codes to appropriate HTTP responses
+      const msg = authError.message ?? 'Failed to create user'
+      const status = authError.status && authError.status >= 400 && authError.status < 600
+        ? authError.status
+        : 400
+      res.status(status).json({ error: msg })
+      return
+    }
+
+    if (!authData?.user?.id) {
+      res.status(500).json({ error: 'User created but ID not returned' })
+      return
+    }
 
     const newUserId = authData.user.id
 
@@ -96,12 +104,17 @@ clientsRouter.post('/', clientWriteLimiter, async (req, res, next) => {
         role: 'client',
         default_language: 'en',
         email_notifications: false,
-        plan: 'client',
+        plan: 'free',
         documents_this_month: 0,
         created_by_lawyer_id: userId,
       })
 
-    if (profileError) throw profileError
+    if (profileError) {
+      // Auth user was created but profile upsert failed — log for investigation
+      console.error(`[clients] profile upsert failed for userId=${newUserId}:`, profileError)
+      res.status(500).json({ error: `Profile setup failed: ${profileError.message}` })
+      return
+    }
 
     console.log(`[audit] client created: lawyerId=${userId} clientId=${newUserId} email=${email} ip=${req.ip}`)
 
