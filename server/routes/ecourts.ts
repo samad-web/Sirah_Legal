@@ -17,6 +17,18 @@ ecourtsRouter.get('/search', async (req, res, next) => {
       return
     }
 
+    // Validate CNR format: 16 alphanumeric characters (e.g., MHNS010012342024)
+    if (cnr && !/^[A-Z0-9]{10,20}$/i.test(cnr)) {
+      res.status(400).json({ error: 'Invalid CNR format. Expected 16 alphanumeric characters.' })
+      return
+    }
+
+    // Validate caseNo: numeric only
+    if (caseNo && !/^\d{1,15}$/.test(caseNo)) {
+      res.status(400).json({ error: 'Invalid case number format.' })
+      return
+    }
+
     // Attempt real eCourts API (CNR lookup)
     if (cnr) {
       try {

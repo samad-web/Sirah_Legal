@@ -25,6 +25,11 @@ export function formatDate(date: string | Date): string {
 export function sanitizeMarkdown(raw: string): string {
   let s = raw
 
+  // Strip code fences (```...```) and inline backticks
+  s = s.replace(/```[\s\S]*?```/g, '')
+  s = s.replace(/`([^`]*)`/g, '$1')
+  s = s.replace(/`/g, '')
+
   // Bold-italic: ***text*** / ___text___
   s = s.replace(/\*{3}(.+?)\*{3}/g, '$1')
   s = s.replace(/_{3}(.+?)_{3}/g, '$1')
@@ -41,7 +46,19 @@ export function sanitizeMarkdown(raw: string): string {
   s = s.replace(/(^|\s)\*(?=\S)/gm, '$1')
   s = s.replace(/(?<=\S)\*($|\s)/gm, '$1')
 
-  return s
+  // Strip markdown heading markers (## Heading → Heading)
+  s = s.replace(/^#{1,6}\s+/gm, '')
+
+  return s.trim()
+}
+
+/** Convert plain text with \n\n paragraph breaks into HTML paragraphs for TipTap */
+export function textToHtml(text: string): string {
+  if (!text) return ''
+  return text
+    .split(/\n{2,}/)
+    .map(para => `<p>${para.replace(/\n/g, '<br/>')}</p>`)
+    .join('')
 }
 
 export function capitalizeWords(str: string): string {
@@ -61,32 +78,57 @@ export const INDIAN_STATES = [
 
 export const RELEVANT_ACTS: Record<string, string[]> = {
   'money-recovery': [
-    'Negotiable Instruments Act, 1881',
+    'Negotiable Instruments Act, 1881 (Section 138)',
+    'Indian Contract Act, 1872 (Sections 73-74)',
     'Code of Civil Procedure, 1908',
-    'Limitation Act, 1963',
+    'Limitation Act, 1963 (Article 55 — 3 years)',
     'SARFAESI Act, 2002',
+    'Insolvency and Bankruptcy Code, 2016',
+    'Bharatiya Nyaya Sanhita, 2023 (Cheating / Criminal Breach of Trust)',
   ],
   'property-dispute': [
     'Transfer of Property Act, 1882',
     'Registration Act, 1908',
     'Specific Relief Act, 1963',
     'Code of Civil Procedure, 1908',
+    'Limitation Act, 1963 (Article 65 — 12 years)',
+    'Land Acquisition Act, 1894 / RFCTLARR Act, 2013',
+    'Real Estate (Regulation and Development) Act, 2016',
+    'Indian Succession Act, 1925',
+    'Hindu Succession Act, 1956',
+    'Bharatiya Nyaya Sanhita, 2023 (Fraud / Forgery)',
   ],
   'service-deficiency': [
     'Consumer Protection Act, 2019',
     'Information Technology Act, 2000',
+    'Motor Vehicles Act, 1988',
+    'Real Estate (Regulation and Development) Act, 2016',
+    'Indian Contract Act, 1872',
+    'Bharatiya Nyaya Sanhita, 2023 (Cheating)',
   ],
   'employment-matter': [
     'Industrial Disputes Act, 1947',
-    'Payment of Wages Act, 1936',
-    'Shops and Establishments Act',
     'Minimum Wages Act, 1948',
+    'Code on Wages, 2019',
+    'Industrial Relations Code, 2020',
+    'Social Security Code, 2020',
+    'Payment of Wages Act, 1936',
+    'Shops and Establishments Act (State-specific)',
+    'Protection of Women from Domestic Violence Act, 2005',
+    'Bharatiya Nyaya Sanhita, 2023 (Criminal Intimidation)',
   ],
   'demand-letter': [
+    'Indian Contract Act, 1872',
     'Code of Civil Procedure, 1908',
     'Limitation Act, 1963',
+    'Specific Relief Act, 1963',
+    'Negotiable Instruments Act, 1881',
+    'Bharatiya Nyaya Sanhita, 2023',
   ],
   'rejoinder': [
     'Code of Civil Procedure, 1908',
+    'Limitation Act, 1963',
+    'Bharatiya Sakshya Adhiniyam, 2023 (Evidence)',
+    'Indian Contract Act, 1872',
   ],
 }

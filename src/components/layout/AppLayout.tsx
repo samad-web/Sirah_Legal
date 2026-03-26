@@ -4,6 +4,7 @@ import { LayoutGrid, Folder, PenLine, Users, Settings } from 'lucide-react'
 import { Sidebar } from './Sidebar'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 
 const mobileNavItems = [
   { to: '/dashboard', icon: <LayoutGrid size={20} />, label: 'Home' },
@@ -55,7 +56,9 @@ export function AppLayout() {
             transition={{ duration: 0.3, ease: 'easeInOut' }}
             className="h-full overflow-y-auto pb-16 md:pb-0"
           >
-            <Outlet />
+            <ErrorBoundary>
+              <Outlet />
+            </ErrorBoundary>
           </motion.div>
         </AnimatePresence>
       </main>

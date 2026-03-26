@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   FileText, Briefcase, Gavel, FolderOpen,
   Flag, CreditCard, Bell, ClipboardList, ChevronDown, ChevronLeft, ChevronRight, Eye,
-  MessageSquare, Send, Upload, CheckCircle2,
+  MessageSquare, Send, Upload, CheckCircle2, AlertTriangle, StickyNote, Plus, Trash2,
+  Sparkles, Star, ExternalLink, CalendarPlus, BookOpen, CheckCheck, Pencil, Share2,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import {
@@ -17,9 +18,20 @@ import {
   sendClientMessage,
   getClientDocumentRequests,
   fulfilDocumentRequest,
+  getClientNotes,
+  createClientNote,
+  updateClientNote,
+  deleteClientNote,
+  markRequestUrgent,
+  acknowledgeDocument,
+  getAcknowledgedDocuments,
+  getAICaseSummary,
+  submitClientFeedback,
 } from '@/lib/api-additions'
 import type { Document, Case, CaseTimelineEvent, CaseMessage, DocumentRequest } from '@/lib/supabase'
+import type { ClientNote, DocumentAcknowledgment } from '@/lib/api-additions'
 import { useAuditLog } from '@/lib/useAuditLog'
+import { FileUploadZone } from '@/components/client/FileUploadZone'
 import { formatDate } from '@/lib/utils'
 import { DocumentPreview } from '@/components/ui/DocumentPreview'
 
@@ -50,15 +62,20 @@ const EVENT_COLORS: Record<CaseTimelineEvent['event_type'], string> = {
   notice:    'text-[#c4b5fd] bg-[rgba(196,181,253,0.12)] border-[rgba(196,181,253,0.3)]',
 }
 
+// Case progress stages — driven by case status + timeline event types
+const PROGRESS_STAGES = [
+  { key: 'created',  label: 'Case Created' },
+  { key: 'filed',    label: 'Filed' },
+  { key: 'hearing',  label: 'Hearing' },
+  { key: 'order',    label: 'Order' },
+  { key: 'closed',   label: 'Closed' },
+]
+
 function getGreeting() {
   const h = new Date().getHours()
   if (h < 12) return 'Good morning'
   if (h < 17) return 'Good afternoon'
   return 'Good evening'
-}
-
-function isUpcoming(dateStr: string) {
-  return new Date(dateStr) > new Date()
 }
 
 function isToday(dateStr: string) {
@@ -67,6 +84,24 @@ function isToday(dateStr: string) {
   return d.getFullYear() === t.getFullYear() &&
     d.getMonth() === t.getMonth() &&
     d.getDate() === t.getDate()
+}
+
+/** Build a Google Calendar URL for a timeline event */
+function googleCalendarUrl(event: CaseTimelineEvent, caseTitle: string) {
+  const date = event.event_date.replace(/-/g, '')
+  const title = encodeURIComponent(`[${caseTitle}] ${event.title}`)
+  const details = encodeURIComponent(event.description ?? '')
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${date}/${date}&details=${details}`
+}
+
+/** Derive which progress stage the case is at */
+function getCaseStage(c: Case, events: CaseTimelineEvent[]): number {
+  if (c.status === 'closed') return 4
+  const types = new Set(events.map(e => e.event_type))
+  if (types.has('order')) return 3
+  if (types.has('hearing')) return 2
+  if (types.has('filing')) return 1
+  return 0
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -100,6 +135,44 @@ export default function ClientDashboardPage() {
   })
   const [selectedCalDate, setSelectedCalDate] = useState<string | null>(null)
 
+  // Client Notes
+  const [notes, setNotes] = useState<ClientNote[]>([])
+  const [noteInput, setNoteInput] = useState('')
+  const [editingNote, setEditingNote] = useState<ClientNote | null>(null)
+  const [noteShare, setNoteShare] = useState(false)
+  const [savingNote, setSavingNote] = useState(false)
+
+  // Document Acknowledgments
+  const [acknowledgments, setAcknowledgments] = useState<Set<string>>(new Set())
+  const [ackingId, setAckingId] = useState<string | null>(null)
+
+  // AI Case Summary
+  const [summaryOpen, setSummaryOpen] = useState(false)
+  const [summaryText, setSummaryText] = useState('')
+  const [summaryLoading, setSummaryLoading] = useState(false)
+
+  // Feedback
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
+  const [feedbackRating, setFeedbackRating] = useState(0)
+  const [feedbackComment, setFeedbackComment] = useState('')
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false)
+  const [feedbackDone, setFeedbackDone] = useState(false)
+
+  // Urgency
+  const [urgingId, setUrgingId] = useState<string | null>(null)
+
+  // Close any open modal on Escape key
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (previewDoc) { setPreviewDoc(null); return }
+      if (summaryOpen) { setSummaryOpen(false); return }
+      if (feedbackOpen) { setFeedbackOpen(false); return }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [previewDoc, summaryOpen, feedbackOpen])
+
   // Group timeline events by date (YYYY-MM-DD)
   const eventsByDate = useMemo(() => {
     const map = new Map<string, CaseTimelineEvent[]>()
@@ -110,6 +183,30 @@ export default function ClientDashboardPage() {
     })
     return map
   }, [timeline])
+
+  // Activity timeline — combines docs, messages, requests chronologically
+  const activityItems = useMemo(() => {
+    const items: { type: string; label: string; sub?: string; date: string }[] = [
+      ...caseDocs.map(d => ({
+        type: 'document',
+        label: `Document shared: "${d.title}"`,
+        sub: d.type.replace('-', ' '),
+        date: d.created_at,
+      })),
+      ...messages.slice(-20).map(m => ({
+        type: 'message',
+        label: m.sender_id === user?.id ? 'You sent a message' : 'Advocate sent a message',
+        sub: m.content.slice(0, 60) + (m.content.length > 60 ? '…' : ''),
+        date: m.created_at,
+      })),
+      ...docRequests.map(r => ({
+        type: 'request',
+        label: r.status === 'fulfilled' ? `You fulfilled: "${r.title}"` : `Document requested: "${r.title}"`,
+        date: r.fulfilled_at ?? r.created_at,
+      })),
+    ]
+    return items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 12)
+  }, [caseDocs, messages, docRequests, user?.id])
 
   // ── Initial load ─────────────────────────────────────────────────────────
   const fetchCases = useCallback(async () => {
@@ -127,27 +224,39 @@ export default function ClientDashboardPage() {
 
   useEffect(() => { fetchCases() }, [fetchCases])
 
-  // ── Load timeline + docs + messages + requests when selected case changes ──
+  // Load acknowledgments once
   useEffect(() => {
-    if (!selectedCase) { setTimeline([]); setCaseDocs([]); setMessages([]); setDocRequests([]); return }
+    getAcknowledgedDocuments().then(acks => {
+      setAcknowledgments(new Set(acks.map(a => a.document_id)))
+    }).catch(() => {})
+  }, [])
+
+  // ── Load case detail when selected case changes ──
+  useEffect(() => {
+    if (!selectedCase) {
+      setTimeline([]); setCaseDocs([]); setMessages([]); setDocRequests([]); setNotes([])
+      return
+    }
     setLoadingCase(true)
     Promise.all([
       getClientCaseTimeline(selectedCase.id),
       getClientCaseDocuments(selectedCase.id),
       getClientCaseMessages(selectedCase.id).catch(() => [] as CaseMessage[]),
       getClientDocumentRequests().catch(() => [] as DocumentRequest[]),
+      getClientNotes(selectedCase.id).catch(() => [] as ClientNote[]),
     ])
-      .then(([events, docs, msgs, reqs]) => {
+      .then(([events, docs, msgs, reqs, clientNotes]) => {
         setTimeline(events)
         setCaseDocs(docs)
         setMessages(msgs)
         setDocRequests((reqs as DocumentRequest[]).filter(r => r.case_id === selectedCase.id))
+        setNotes(clientNotes)
       })
       .catch(err => console.error('[LexDraft] case detail load failed:', err))
       .finally(() => setLoadingCase(false))
   }, [selectedCase?.id])
 
-  // Auto-scroll messages to bottom
+  // Auto-scroll messages
   useEffect(() => {
     msgEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
@@ -178,9 +287,91 @@ export default function ClientDashboardPage() {
     }
   }
 
+  const handleMarkUrgent = async (requestId: string) => {
+    setUrgingId(requestId)
+    try {
+      const updated = await markRequestUrgent(requestId)
+      setDocRequests(prev => prev.map(r => r.id === requestId ? updated : r))
+    } catch (err) {
+      console.error('[LexDraft] mark urgent failed:', err)
+    } finally {
+      setUrgingId(null)
+    }
+  }
+
   const handlePreview = (doc: Document) => {
     setPreviewDoc(doc)
     logAccess(doc.id, 'preview')
+  }
+
+  const handleAcknowledge = async (docId: string) => {
+    setAckingId(docId)
+    try {
+      await acknowledgeDocument(docId)
+      setAcknowledgments(prev => new Set([...prev, docId]))
+      logAccess(docId, 'preview')
+    } catch (err) {
+      console.error('[LexDraft] acknowledge failed:', err)
+    } finally {
+      setAckingId(null)
+    }
+  }
+
+  const handleSaveNote = async () => {
+    if (!noteInput.trim() || !selectedCase) return
+    setSavingNote(true)
+    try {
+      if (editingNote) {
+        const updated = await updateClientNote(editingNote.id, noteInput.trim(), noteShare)
+        setNotes(prev => prev.map(n => n.id === editingNote.id ? updated : n))
+        setEditingNote(null)
+      } else {
+        const created = await createClientNote(selectedCase.id, noteInput.trim(), noteShare)
+        setNotes(prev => [created, ...prev])
+      }
+      setNoteInput('')
+      setNoteShare(false)
+    } catch (err) {
+      console.error('[LexDraft] save note failed:', err)
+    } finally {
+      setSavingNote(false)
+    }
+  }
+
+  const handleDeleteNote = async (id: string) => {
+    try {
+      await deleteClientNote(id)
+      setNotes(prev => prev.filter(n => n.id !== id))
+    } catch (err) {
+      console.error('[LexDraft] delete note failed:', err)
+    }
+  }
+
+  const handleAISummary = async () => {
+    if (!selectedCase) return
+    setSummaryOpen(true)
+    setSummaryLoading(true)
+    try {
+      const { summary } = await getAICaseSummary(selectedCase.id)
+      setSummaryText(summary)
+    } catch {
+      setSummaryText('Unable to generate summary at this time. Please try again.')
+    } finally {
+      setSummaryLoading(false)
+    }
+  }
+
+  const handleFeedbackSubmit = async () => {
+    if (!feedbackRating || !selectedCase) return
+    setFeedbackSubmitting(true)
+    try {
+      await submitClientFeedback({ case_id: selectedCase.id, rating: feedbackRating, comment: feedbackComment || undefined })
+      setFeedbackDone(true)
+    } catch (err) {
+      console.error('[LexDraft] feedback failed:', err)
+    } finally {
+      setFeedbackSubmitting(false)
+    }
   }
 
   // ─── Render ────────────────────────────────────────────────────────────────
@@ -200,8 +391,9 @@ export default function ClientDashboardPage() {
       <div className="gold-line-solid mb-8" />
 
       {loading ? (
-        <div className="flex items-center justify-center py-24">
+        <div className="flex flex-col items-center justify-center py-24 gap-3">
           <div className="w-6 h-6 border border-gold border-t-transparent animate-spin" />
+          <p className="text-[11px] text-muted" style={{ fontFamily: 'DM Mono, monospace' }}>LOADING YOUR CASES…</p>
         </div>
       ) : cases.length === 0 ? (
         <div className="border border-border/40 p-16 flex flex-col items-center justify-center text-center">
@@ -214,17 +406,14 @@ export default function ClientDashboardPage() {
           </p>
         </div>
       ) : (
-        <>
-          {/* ── Case selector ─────────────────────────────────────────────── */}
+        <> {/* ── Case selector ─────────────────────────────────────────────── */}
           <div className="mb-6">
             <p className="text-[11px] tracking-widest text-muted mb-3" style={{ fontFamily: 'DM Mono, monospace' }}>
               YOUR CASES
             </p>
             {cases.length === 1 ? (
-              /* Single case — just show the card */
               <CaseCard c={cases[0]} selected />
             ) : (
-              /* Multiple cases — dropdown selector */
               <div className="relative">
                 <button
                   onClick={() => setCaseDropdownOpen(o => !o)}
@@ -279,10 +468,8 @@ export default function ClientDashboardPage() {
             )}
           </div>
 
-          {/* ── Selected case detail ──────────────────────────────────────── */}
           {selectedCase && (
             <motion.div key={selectedCase.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }}>
-              {/* Case header strip */}
               {cases.length > 1 && (
                 <div className="mb-6">
                   <CaseCard c={selectedCase} selected />
@@ -296,333 +483,542 @@ export default function ClientDashboardPage() {
               ) : (
                 <div className="space-y-8">
 
-                {/* ── Document Requests ─────────────────────────────────── */}
-                {docRequests.length > 0 && (
+                  {/* ── Case Progress Tracker ──────────────────────────── */}
                   <div>
-                    <p className="text-[11px] tracking-widest text-muted mb-4" style={{ fontFamily: 'DM Mono, monospace' }}>
-                      DOCUMENT REQUESTS
-                    </p>
-                    <div className="border border-border/40 divide-y divide-border/20">
-                      {docRequests.map(req => (
-                        <div key={req.id} className="flex items-start gap-4 px-4 py-3">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[13px] text-foreground" style={{ fontFamily: 'Cormorant Garamond, serif' }}>{req.title}</p>
-                            {req.description && (
-                              <p className="text-[11px] text-muted mt-0.5" style={{ fontFamily: 'Lora, serif' }}>{req.description}</p>
-                            )}
-                          </div>
-                          {req.status === 'pending' ? (
-                            <button
-                              onClick={() => handleFulfilRequest(req.id)}
-                              disabled={fulfillingId === req.id}
-                              className="flex items-center gap-1.5 text-[10px] border border-gold/40 text-gold px-3 py-1.5 hover:bg-forest transition-all disabled:opacity-50 shrink-0"
-                              style={{ fontFamily: 'DM Mono, monospace' }}
-                            >
-                              {fulfillingId === req.id
-                                ? <div className="w-3 h-3 border border-gold border-t-transparent animate-spin" />
-                                : <Upload size={11} />}
-                              MARK DONE
-                            </button>
-                          ) : (
-                            <span className="flex items-center gap-1 text-[10px] text-[#86efac] border border-[rgba(134,239,172,0.3)] px-2 py-1 shrink-0" style={{ fontFamily: 'DM Mono, monospace' }}>
-                              <CheckCircle2 size={11} /> FULFILLED
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* ── Messaging ─────────────────────────────────────────── */}
-                <div>
-                  <div className="flex items-center gap-2 mb-4">
-                    <MessageSquare size={13} className="text-muted" />
-                    <p className="text-[11px] tracking-widest text-muted" style={{ fontFamily: 'DM Mono, monospace' }}>
-                      MESSAGES
-                    </p>
-                  </div>
-                  <div className="border border-border/40 flex flex-col" style={{ height: '320px' }}>
-                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                      {messages.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-full text-center">
-                          <MessageSquare size={22} className="text-muted/30 mb-2" />
-                          <p className="text-[12px] text-muted" style={{ fontFamily: 'Cormorant Garamond, serif' }}>No messages yet.</p>
-                          <p className="text-[10px] text-muted/50 mt-1" style={{ fontFamily: 'DM Mono, monospace' }}>Send a message to your advocate below.</p>
-                        </div>
-                      ) : (
-                        messages.map(msg => {
-                          const isMe = msg.sender_id === user?.id
-                          return (
-                            <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                              <div className={`max-w-[75%] px-3 py-2 text-[12px] ${isMe ? 'bg-forest border border-gold/20 text-parchment' : 'bg-surface-2 border border-border/40 text-foreground'}`}
-                                style={{ fontFamily: 'Lora, serif' }}>
-                                <p>{msg.content}</p>
-                                <p className="text-[9px] text-muted/60 mt-1 text-right" style={{ fontFamily: 'DM Mono, monospace' }}>
-                                  {new Date(msg.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                                </p>
-                              </div>
-                            </div>
-                          )
-                        })
-                      )}
-                      <div ref={msgEndRef} />
-                    </div>
-                    <div className="border-t border-border/40 flex items-center gap-2 p-2">
-                      <input
-                        value={msgInput}
-                        onChange={e => setMsgInput(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendMessage())}
-                        placeholder="Type a message…"
-                        className="flex-1 bg-transparent text-[12px] text-foreground placeholder:text-muted/40 outline-none px-2 py-1"
-                        style={{ fontFamily: 'Lora, serif' }}
-                      />
-                      <button
-                        onClick={handleSendMessage}
-                        disabled={!msgInput.trim() || sendingMsg}
-                        className="p-2 text-gold hover:text-gold/80 disabled:opacity-30 transition-colors"
-                      >
-                        {sendingMsg ? <div className="w-4 h-4 border border-gold border-t-transparent animate-spin" /> : <Send size={14} />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-6 lg:gap-8">
-
-                  {/* ── Calendar ────────────────────────────────────────── */}
-                  <div>
-                    {/* Calendar header */}
                     <div className="flex items-center justify-between mb-4">
                       <p className="text-[11px] tracking-widest text-muted" style={{ fontFamily: 'DM Mono, monospace' }}>
-                        CASE CALENDAR
+                        CASE PROGRESS
                       </p>
-                      <div className="flex items-center gap-1">
+                      <div className="flex gap-2">
                         <button
-                          onClick={() => setCalendarDate(d => new Date(d.getFullYear(), d.getMonth() - 1, 1))}
-                          className="w-7 h-7 flex items-center justify-center text-muted hover:text-foreground border border-transparent hover:border-border/50 transition-all"
+                          onClick={handleAISummary}
+                          className="flex items-center gap-1.5 text-[10px] border border-gold/30 text-gold/80 px-3 py-1.5 hover:bg-forest hover:text-gold transition-all"
+                          style={{ fontFamily: 'DM Mono, monospace' }}
                         >
-                          <ChevronLeft size={13} />
+                          <Sparkles size={11} /> AI SUMMARY
                         </button>
-                        <span className="text-[11px] text-foreground/80 min-w-[110px] text-center" style={{ fontFamily: 'DM Mono, monospace' }}>
-                          {calendarDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }).toUpperCase()}
-                        </span>
                         <button
-                          onClick={() => setCalendarDate(d => new Date(d.getFullYear(), d.getMonth() + 1, 1))}
-                          className="w-7 h-7 flex items-center justify-center text-muted hover:text-foreground border border-transparent hover:border-border/50 transition-all"
+                          onClick={() => setFeedbackOpen(true)}
+                          className="flex items-center gap-1.5 text-[10px] border border-border/50 text-muted px-3 py-1.5 hover:border-gold/30 hover:text-gold transition-all"
+                          style={{ fontFamily: 'DM Mono, monospace' }}
                         >
-                          <ChevronRight size={13} />
+                          <Star size={11} /> FEEDBACK
                         </button>
                       </div>
                     </div>
+                    <CaseProgressTracker case_={selectedCase} events={timeline} />
+                  </div>
 
-                    {/* Calendar grid */}
-                    <div className="border border-border/40">
-                      {/* Day-of-week headers */}
-                      <div className="grid grid-cols-7 border-b border-border/40">
-                        {['SUN','MON','TUE','WED','THU','FRI','SAT'].map(d => (
-                          <div key={d} className="py-2 text-center">
-                            <span className="text-[9px] text-muted/60 tracking-wider" style={{ fontFamily: 'DM Mono, monospace' }}>{d}</span>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Day cells */}
-                      {(() => {
-                        const year = calendarDate.getFullYear()
-                        const month = calendarDate.getMonth()
-                        const firstDay = new Date(year, month, 1).getDay()
-                        const daysInMonth = new Date(year, month + 1, 0).getDate()
-                        const todayStr = new Date().toISOString().slice(0, 10)
-                        const cells: React.ReactNode[] = []
-
-                        // Leading empty cells
-                        for (let i = 0; i < firstDay; i++) {
-                          cells.push(<div key={`e-${i}`} className="h-16 border-b border-r border-border/20 bg-surface/30 last:border-r-0" />)
-                        }
-
-                        for (let day = 1; day <= daysInMonth; day++) {
-                          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-                          const dayEvents = eventsByDate.get(dateStr) ?? []
-                          const isToday = dateStr === todayStr
-                          const isSelected = dateStr === selectedCalDate
-                          const colIndex = (firstDay + day - 1) % 7
-
-                          cells.push(
-                            <div
-                              key={dateStr}
-                              onClick={() => setSelectedCalDate(isSelected ? null : dateStr)}
-                              className={`h-16 border-b border-border/20 p-1.5 flex flex-col cursor-pointer transition-colors select-none
-                                ${colIndex < 6 ? 'border-r' : ''} border-r-border/20
-                                ${isSelected ? 'bg-forest/60' : isToday ? 'bg-gold/5' : 'hover:bg-surface-2'}`}
-                            >
-                              <span className={`text-[11px] w-5 h-5 flex items-center justify-center rounded-none mb-0.5
-                                ${isToday ? 'bg-gold text-[#0E0E0E] font-bold' : isSelected ? 'text-gold' : 'text-foreground/70'}
-                              `} style={{ fontFamily: 'DM Mono, monospace' }}>
-                                {day}
-                              </span>
-
-                              {/* Event dots */}
-                              <div className="flex flex-wrap gap-0.5 mt-auto">
-                                {dayEvents.slice(0, 3).map((ev, idx) => (
-                                  <span
-                                    key={idx}
-                                    className={`inline-flex items-center gap-0.5 text-[8px] border px-1 py-0 leading-4 ${EVENT_COLORS[ev.event_type]}`}
+                  {/* ── Document Requests ─────────────────────────────── */}
+                  {docRequests.length > 0 && (
+                    <div>
+                      <p className="text-[11px] tracking-widest text-muted mb-4" style={{ fontFamily: 'DM Mono, monospace' }}>
+                        DOCUMENT REQUESTS
+                      </p>
+                      <div className="border border-border/40 divide-y divide-border/20">
+                        {docRequests.map(req => (
+                          <div key={req.id}>
+                            <div className={`flex items-start gap-4 px-4 py-3 ${req.is_urgent ? 'bg-[rgba(251,191,36,0.04)] border-l-2 border-l-[#fbbf24]/40' : ''}`}>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="text-[13px] text-foreground" style={{ fontFamily: 'Cormorant Garamond, serif' }}>{req.title}</p>
+                                  {req.is_urgent && (
+                                    <span className="flex items-center gap-1 text-[9px] text-[#fbbf24] border border-[rgba(251,191,36,0.3)] px-1.5 py-0.5" style={{ fontFamily: 'DM Mono, monospace' }}>
+                                      <AlertTriangle size={9} /> URGENT
+                                    </span>
+                                  )}
+                                </div>
+                                {req.description && (
+                                  <p className="text-[11px] text-muted mt-0.5" style={{ fontFamily: 'Lora, serif' }}>{req.description}</p>
+                                )}
+                                {req.urgency_note && (
+                                  <p className="text-[10px] text-[#fbbf24]/70 mt-0.5" style={{ fontFamily: 'DM Mono, monospace' }}>Note: {req.urgency_note}</p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                {req.status === 'pending' && !req.is_urgent && (
+                                  <button
+                                    onClick={() => handleMarkUrgent(req.id)}
+                                    disabled={urgingId === req.id}
+                                    className="flex items-center gap-1 text-[10px] border border-[rgba(251,191,36,0.3)] text-[#fbbf24]/70 px-2 py-1.5 hover:bg-[rgba(251,191,36,0.08)] transition-all disabled:opacity-50"
                                     style={{ fontFamily: 'DM Mono, monospace' }}
-                                    title={ev.title}
+                                    title="Mark as urgent"
                                   >
-                                    {EVENT_ICONS[ev.event_type]}
+                                    {urgingId === req.id ? <div className="w-3 h-3 border border-[#fbbf24] border-t-transparent animate-spin" /> : <AlertTriangle size={10} />}
+                                  </button>
+                                )}
+                                {req.status === 'pending' ? (
+                                  <button
+                                    onClick={() => handleFulfilRequest(req.id)}
+                                    disabled={fulfillingId === req.id}
+                                    className="flex items-center gap-1.5 text-[10px] border border-gold/40 text-gold px-3 py-1.5 hover:bg-forest transition-all disabled:opacity-50"
+                                    style={{ fontFamily: 'DM Mono, monospace' }}
+                                  >
+                                    {fulfillingId === req.id
+                                      ? <div className="w-3 h-3 border border-gold border-t-transparent animate-spin" />
+                                      : <Upload size={11} />}
+                                    MARK DONE
+                                  </button>
+                                ) : (
+                                  <span className="flex items-center gap-1 text-[10px] text-[#86efac] border border-[rgba(134,239,172,0.3)] px-2 py-1" style={{ fontFamily: 'DM Mono, monospace' }}>
+                                    <CheckCircle2 size={11} /> FULFILLED
                                   </span>
-                                ))}
-                                {dayEvents.length > 3 && (
-                                  <span className="text-[8px] text-muted" style={{ fontFamily: 'DM Mono, monospace' }}>+{dayEvents.length - 3}</span>
                                 )}
                               </div>
                             </div>
-                          )
-                        }
-
-                        // Trailing empty cells to complete the grid
-                        const totalCells = firstDay + daysInMonth
-                        const trailing = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7)
-                        for (let i = 0; i < trailing; i++) {
-                          cells.push(<div key={`t-${i}`} className="h-16 border-b border-r border-border/20 bg-surface/30 last:border-r-0" />)
-                        }
-
-                        return <div className="grid grid-cols-7">{cells}</div>
-                      })()}
-                    </div>
-
-                    {/* Selected date events */}
-                    <AnimatePresence>
-                      {selectedCalDate && (
-                        <motion.div
-                          key={selectedCalDate}
-                          initial={{ opacity: 0, y: -6 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -6 }}
-                          transition={{ duration: 0.15 }}
-                          className="mt-3 border border-gold/20 bg-surface-2"
-                        >
-                          <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/30">
-                            <span className="text-[11px] text-gold/80 tracking-widest" style={{ fontFamily: 'DM Mono, monospace' }}>
-                              {new Date(selectedCalDate + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }).toUpperCase()}
-                            </span>
-                            <button onClick={() => setSelectedCalDate(null)} className="text-muted/50 hover:text-muted text-[10px]" style={{ fontFamily: 'DM Mono, monospace' }}>✕</button>
+                            {/* File upload zone for pending requests */}
+                            {req.status === 'pending' && selectedCase && (
+                              <div className="px-4 py-3 border-t border-border/10">
+                                <FileUploadZone
+                                  caseId={selectedCase.id}
+                                  requestId={req.id}
+                                  onUploadComplete={() => {
+                                    setDocRequests(prev =>
+                                      prev.map(r => r.id === req.id ? { ...r, status: 'fulfilled' as const, fulfilled_at: new Date().toISOString() } : r)
+                                    )
+                                  }}
+                                />
+                              </div>
+                            )}
                           </div>
-
-                          {(eventsByDate.get(selectedCalDate) ?? []).length === 0 ? (
-                            <p className="px-4 py-3 text-[11px] text-muted/60" style={{ fontFamily: 'DM Mono, monospace' }}>
-                              No events on this date.
-                            </p>
-                          ) : (
-                            <div className="divide-y divide-border/20">
-                              {(eventsByDate.get(selectedCalDate) ?? []).map(ev => (
-                                <div key={ev.id} className="flex items-start gap-3 px-4 py-3">
-                                  <span className={`w-7 h-7 shrink-0 flex items-center justify-center border ${EVENT_COLORS[ev.event_type]}`}>
-                                    {EVENT_ICONS[ev.event_type]}
-                                  </span>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                                      <span className={`text-[9px] border px-1.5 py-0.5 ${EVENT_COLORS[ev.event_type]}`} style={{ fontFamily: 'DM Mono, monospace' }}>
-                                        {ev.event_type.toUpperCase()}
-                                      </span>
-                                      {isToday(ev.event_date) && (
-                                        <span className="text-[9px] bg-gold/20 border border-gold/40 text-gold px-1.5 py-0.5" style={{ fontFamily: 'DM Mono, monospace' }}>TODAY</span>
-                                      )}
-                                    </div>
-                                    <p className="text-[13px] text-foreground leading-snug" style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 500 }}>
-                                      {ev.title}
-                                    </p>
-                                    {ev.description && (
-                                      <p className="text-[11px] text-muted mt-0.5" style={{ fontFamily: 'Lora, serif' }}>{ev.description}</p>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-
-                    {/* No events hint */}
-                    {timeline.length === 0 && (
-                      <div className="mt-4 border border-border/30 p-6 flex flex-col items-center text-center">
-                        <Flag size={20} className="text-muted/30 mb-2" />
-                        <p className="text-[12px] text-muted" style={{ fontFamily: 'Cormorant Garamond, serif' }}>No events scheduled yet.</p>
-                        <p className="text-[10px] text-muted/50 mt-1" style={{ fontFamily: 'DM Mono, monospace' }}>Your advocate will add hearings and milestones here.</p>
+                        ))}
                       </div>
-                    )}
+                    </div>
+                  )}
+
+                  {/* ── Messaging ─────────────────────────────────────── */}
+                  <div>
+                    <div className="flex items-center gap-2 mb-4">
+                      <MessageSquare size={13} className="text-muted" />
+                      <p className="text-[11px] tracking-widest text-muted" style={{ fontFamily: 'DM Mono, monospace' }}>
+                        MESSAGES
+                      </p>
+                    </div>
+                    <div className="border border-border/40 flex flex-col" style={{ height: '320px' }}>
+                      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                        {messages.length === 0 ? (
+                          <div className="flex flex-col items-center justify-center h-full text-center">
+                            <MessageSquare size={22} className="text-muted/30 mb-2" />
+                            <p className="text-[12px] text-muted" style={{ fontFamily: 'Cormorant Garamond, serif' }}>No messages yet.</p>
+                            <p className="text-[10px] text-muted/50 mt-1" style={{ fontFamily: 'DM Mono, monospace' }}>Send a message to your advocate below.</p>
+                          </div>
+                        ) : (
+                          messages.map(msg => {
+                            const isMe = msg.sender_id === user?.id
+                            return (
+                              <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                                <div className={`max-w-[75%] px-3 py-2 text-[12px] ${isMe ? 'bg-forest border border-gold/20 text-parchment' : 'bg-surface-2 border border-border/40 text-foreground'}`}
+                                  style={{ fontFamily: 'Lora, serif' }}>
+                                  <p>{msg.content}</p>
+                                  <p className="text-[9px] text-muted/60 mt-1 text-right" style={{ fontFamily: 'DM Mono, monospace' }}>
+                                    {new Date(msg.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                                  </p>
+                                </div>
+                              </div>
+                            )
+                          })
+                        )}
+                        <div ref={msgEndRef} />
+                      </div>
+                      <div className="border-t border-border/40 flex items-center gap-2 p-2">
+                        <input
+                          value={msgInput}
+                          onChange={e => setMsgInput(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendMessage())}
+                          placeholder="Type a message…"
+                          className="flex-1 bg-transparent text-[12px] text-foreground placeholder:text-muted/40 outline-none px-2 py-1"
+                          style={{ fontFamily: 'Lora, serif' }}
+                        />
+                        <button
+                          onClick={handleSendMessage}
+                          disabled={!msgInput.trim() || sendingMsg}
+                          className="p-2 text-gold hover:text-gold/80 disabled:opacity-30 transition-colors"
+                        >
+                          {sendingMsg ? <div className="w-4 h-4 border border-gold border-t-transparent animate-spin" /> : <Send size={14} />}
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
-                  {/* ── Case Documents ──────────────────────────────────── */}
-                  <div>
-                    <div className="flex items-center justify-between mb-5">
-                      <p className="text-[11px] tracking-widest text-muted" style={{ fontFamily: 'DM Mono, monospace' }}>
-                        CASE DOCUMENTS
-                      </p>
-                      {caseDocs.length > 0 && (
-                        <Link to="/client/documents"
-                          className="text-[11px] text-gold/70 hover:text-gold nav-hover-gold"
-                          style={{ fontFamily: 'DM Mono, monospace' }}>
-                          VIEW ALL →
-                        </Link>
-                      )}
-                    </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-6 lg:gap-8">
 
-                    {caseDocs.length === 0 ? (
-                      <div className="border border-border/30 p-10 flex flex-col items-center text-center">
-                        <FileText size={24} className="text-muted/30 mb-3" />
-                        <p className="text-[13px] text-muted" style={{ fontFamily: 'Cormorant Garamond, serif' }}>
-                          No documents linked to this case yet.
+                    {/* ── Calendar ────────────────────────────────────── */}
+                    <div>
+                      <div className="flex items-center justify-between mb-4">
+                        <p className="text-[11px] tracking-widest text-muted" style={{ fontFamily: 'DM Mono, monospace' }}>
+                          CASE CALENDAR
                         </p>
-                        <p className="text-[10px] text-muted/50 mt-1" style={{ fontFamily: 'DM Mono, monospace' }}>
-                          Documents shared by your advocate will appear here.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="border border-border/40 overflow-x-auto">
-                        <div className="min-w-[480px]">
-                          {/* Header */}
-                          <div className="grid grid-cols-[2fr_1fr_1fr_36px] gap-4 px-4 py-2.5 border-b border-border/40 bg-surface">
-                            {['Document', 'Type', 'Date', ''].map(h => (
-                              <span key={h} className="text-[10px] tracking-widest text-muted/60"
-                                style={{ fontFamily: 'DM Mono, monospace' }}>{h}</span>
-                            ))}
-                          </div>
-
-                          {caseDocs.map((doc, i) => (
-                            <motion.div
-                              key={doc.id}
-                              initial={{ opacity: 0 }}
-                              animate={{ opacity: 1 }}
-                              transition={{ delay: i * 0.04 }}
-                              onClick={() => handlePreview(doc)}
-                              className="grid grid-cols-[2fr_1fr_1fr_36px] gap-4 px-4 py-3.5 border-b border-border/20 last:border-0 hover:bg-surface-2 transition-colors items-center cursor-pointer group"
-                            >
-                              <span className="text-[13px] text-foreground truncate group-hover:text-gold transition-colors"
-                                style={{ fontFamily: 'Cormorant Garamond, serif' }}>
-                                {doc.title}
-                              </span>
-                              <span className={`text-[10px] border px-2 py-0.5 w-fit ${TYPE_COLORS[doc.type] || ''}`}
-                                style={{ fontFamily: 'DM Mono, monospace' }}>
-                                {doc.type.toUpperCase().replace('-', ' ')}
-                              </span>
-                              <span className="text-[11px] text-muted" style={{ fontFamily: 'DM Mono, monospace' }}>
-                                {formatDate(doc.created_at)}
-                              </span>
-                              <div className="flex items-center justify-center opacity-30 group-hover:opacity-70 transition-opacity">
-                                <Eye size={14} className="text-gold" />
-                              </div>
-                            </motion.div>
-                          ))}
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => setCalendarDate(d => new Date(d.getFullYear(), d.getMonth() - 1, 1))}
+                            className="w-7 h-7 flex items-center justify-center text-muted hover:text-foreground border border-transparent hover:border-border/50 transition-all"
+                          >
+                            <ChevronLeft size={13} />
+                          </button>
+                          <span className="text-[11px] text-foreground/80 min-w-[110px] text-center" style={{ fontFamily: 'DM Mono, monospace' }}>
+                            {calendarDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }).toUpperCase()}
+                          </span>
+                          <button
+                            onClick={() => setCalendarDate(d => new Date(d.getFullYear(), d.getMonth() + 1, 1))}
+                            className="w-7 h-7 flex items-center justify-center text-muted hover:text-foreground border border-transparent hover:border-border/50 transition-all"
+                          >
+                            <ChevronRight size={13} />
+                          </button>
                         </div>
                       </div>
-                    )}
+
+                      <div className="border border-border/40">
+                        <div className="grid grid-cols-7 border-b border-border/40">
+                          {['SUN','MON','TUE','WED','THU','FRI','SAT'].map(d => (
+                            <div key={d} className="py-2 text-center">
+                              <span className="text-[9px] text-muted/60 tracking-wider" style={{ fontFamily: 'DM Mono, monospace' }}>{d}</span>
+                            </div>
+                          ))}
+                        </div>
+                        {(() => {
+                          const year = calendarDate.getFullYear()
+                          const month = calendarDate.getMonth()
+                          const firstDay = new Date(year, month, 1).getDay()
+                          const daysInMonth = new Date(year, month + 1, 0).getDate()
+                          const todayStr = new Date().toISOString().slice(0, 10)
+                          const cells: React.ReactNode[] = []
+                          for (let i = 0; i < firstDay; i++) {
+                            cells.push(<div key={`e-${i}`} className="h-16 border-b border-r border-border/20 bg-surface/30 last:border-r-0" />)
+                          }
+                          for (let day = 1; day <= daysInMonth; day++) {
+                            const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+                            const dayEvents = eventsByDate.get(dateStr) ?? []
+                            const isTodayCell = dateStr === todayStr
+                            const isSelected = dateStr === selectedCalDate
+                            const colIndex = (firstDay + day - 1) % 7
+                            cells.push(
+                              <div
+                                key={dateStr}
+                                onClick={() => setSelectedCalDate(isSelected ? null : dateStr)}
+                                className={`h-16 border-b border-border/20 p-1.5 flex flex-col cursor-pointer transition-colors select-none
+                                  ${colIndex < 6 ? 'border-r' : ''} border-r-border/20
+                                  ${isSelected ? 'bg-forest/60' : isTodayCell ? 'bg-gold/5' : 'hover:bg-surface-2'}`}
+                              >
+                                <span className={`text-[11px] w-5 h-5 flex items-center justify-center rounded-none mb-0.5
+                                  ${isTodayCell ? 'bg-gold text-[#0E0E0E] font-bold' : isSelected ? 'text-gold' : 'text-foreground/70'}
+                                `} style={{ fontFamily: 'DM Mono, monospace' }}>
+                                  {day}
+                                </span>
+                                <div className="flex flex-wrap gap-0.5 mt-auto">
+                                  {dayEvents.slice(0, 3).map((ev, idx) => (
+                                    <span key={idx} className={`inline-flex items-center gap-0.5 text-[8px] border px-1 py-0 leading-4 ${EVENT_COLORS[ev.event_type]}`}
+                                      style={{ fontFamily: 'DM Mono, monospace' }} title={ev.title}>
+                                      {EVENT_ICONS[ev.event_type]}
+                                    </span>
+                                  ))}
+                                  {dayEvents.length > 3 && (
+                                    <span className="text-[8px] text-muted" style={{ fontFamily: 'DM Mono, monospace' }}>+{dayEvents.length - 3}</span>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          }
+                          const totalCells = firstDay + daysInMonth
+                          const trailing = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7)
+                          for (let i = 0; i < trailing; i++) {
+                            cells.push(<div key={`t-${i}`} className="h-16 border-b border-r border-border/20 bg-surface/30 last:border-r-0" />)
+                          }
+                          return <div className="grid grid-cols-7">{cells}</div>
+                        })()}
+                      </div>
+
+                      <AnimatePresence>
+                        {selectedCalDate && (
+                          <motion.div
+                            key={selectedCalDate}
+                            initial={{ opacity: 0, y: -6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -6 }}
+                            transition={{ duration: 0.15 }}
+                            className="mt-3 border border-gold/20 bg-surface-2"
+                          >
+                            <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/30">
+                              <span className="text-[11px] text-gold/80 tracking-widest" style={{ fontFamily: 'DM Mono, monospace' }}>
+                                {new Date(selectedCalDate + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }).toUpperCase()}
+                              </span>
+                              <button onClick={() => setSelectedCalDate(null)} className="text-muted/50 hover:text-muted text-[10px]">✕</button>
+                            </div>
+                            {(eventsByDate.get(selectedCalDate) ?? []).length === 0 ? (
+                              <p className="px-4 py-3 text-[11px] text-muted/60" style={{ fontFamily: 'DM Mono, monospace' }}>No events on this date.</p>
+                            ) : (
+                              <div className="divide-y divide-border/20">
+                                {(eventsByDate.get(selectedCalDate) ?? []).map(ev => (
+                                  <div key={ev.id} className="flex items-start gap-3 px-4 py-3">
+                                    <span className={`w-7 h-7 shrink-0 flex items-center justify-center border ${EVENT_COLORS[ev.event_type]}`}>
+                                      {EVENT_ICONS[ev.event_type]}
+                                    </span>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                                        <span className={`text-[9px] border px-1.5 py-0.5 ${EVENT_COLORS[ev.event_type]}`} style={{ fontFamily: 'DM Mono, monospace' }}>
+                                          {ev.event_type.toUpperCase()}
+                                        </span>
+                                        {isToday(ev.event_date) && (
+                                          <span className="text-[9px] bg-gold/20 border border-gold/40 text-gold px-1.5 py-0.5" style={{ fontFamily: 'DM Mono, monospace' }}>TODAY</span>
+                                        )}
+                                      </div>
+                                      <p className="text-[13px] text-foreground leading-snug" style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 500 }}>
+                                        {ev.title}
+                                      </p>
+                                      {ev.description && (
+                                        <p className="text-[11px] text-muted mt-0.5" style={{ fontFamily: 'Lora, serif' }}>{ev.description}</p>
+                                      )}
+                                    </div>
+                                    {/* Add to Google Calendar */}
+                                    <a
+                                      href={googleCalendarUrl(ev, selectedCase.title)}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      onClick={e => e.stopPropagation()}
+                                      className="shrink-0 flex items-center gap-1 text-[9px] text-muted/50 hover:text-gold border border-transparent hover:border-gold/30 px-2 py-1 transition-all"
+                                      style={{ fontFamily: 'DM Mono, monospace' }}
+                                      title="Add to Google Calendar"
+                                    >
+                                      <CalendarPlus size={11} />
+                                    </a>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      {timeline.length === 0 && (
+                        <div className="mt-4 border border-border/30 p-6 flex flex-col items-center text-center">
+                          <Flag size={20} className="text-muted/30 mb-2" />
+                          <p className="text-[12px] text-muted" style={{ fontFamily: 'Cormorant Garamond, serif' }}>No events scheduled yet.</p>
+                          <p className="text-[10px] text-muted/50 mt-1" style={{ fontFamily: 'DM Mono, monospace' }}>Your advocate will add hearings and milestones here.</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ── Case Documents ──────────────────────────────── */}
+                    <div>
+                      <div className="flex items-center justify-between mb-5">
+                        <p className="text-[11px] tracking-widest text-muted" style={{ fontFamily: 'DM Mono, monospace' }}>
+                          CASE DOCUMENTS
+                        </p>
+                        {caseDocs.length > 0 && (
+                          <Link to="/client/documents"
+                            className="text-[11px] text-gold/70 hover:text-gold nav-hover-gold"
+                            style={{ fontFamily: 'DM Mono, monospace' }}>
+                            VIEW ALL →
+                          </Link>
+                        )}
+                      </div>
+
+                      {caseDocs.length === 0 ? (
+                        <div className="border border-border/30 p-10 flex flex-col items-center text-center">
+                          <FileText size={24} className="text-muted/30 mb-3" />
+                          <p className="text-[13px] text-muted" style={{ fontFamily: 'Cormorant Garamond, serif' }}>
+                            No documents linked to this case yet.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="border border-border/40 overflow-x-auto">
+                          <div className="min-w-[480px]">
+                            <div className="grid grid-cols-[2fr_1fr_1fr_auto] gap-4 px-4 py-2.5 border-b border-border/40 bg-surface">
+                              {['Document', 'Type', 'Date', ''].map(h => (
+                                <span key={h} className="text-[10px] tracking-widest text-muted/60" style={{ fontFamily: 'DM Mono, monospace' }}>{h}</span>
+                              ))}
+                            </div>
+                            {caseDocs.map((doc, i) => (
+                              <motion.div
+                                key={doc.id}
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                transition={{ delay: i * 0.04 }}
+                                className="grid grid-cols-[2fr_1fr_1fr_auto] gap-4 px-4 py-3.5 border-b border-border/20 last:border-0 hover:bg-surface-2 transition-colors items-center group"
+                              >
+                                <button onClick={() => handlePreview(doc)} className="text-left">
+                                  <span className="text-[13px] text-foreground truncate group-hover:text-gold transition-colors block"
+                                    style={{ fontFamily: 'Cormorant Garamond, serif' }}>
+                                    {doc.title}
+                                  </span>
+                                  {acknowledgments.has(doc.id) && (
+                                    <span className="text-[9px] text-[#86efac]/70 flex items-center gap-0.5 mt-0.5" style={{ fontFamily: 'DM Mono, monospace' }}>
+                                      <CheckCheck size={9} /> REVIEWED
+                                    </span>
+                                  )}
+                                </button>
+                                <span className={`text-[10px] border px-2 py-0.5 w-fit ${TYPE_COLORS[doc.type] || ''}`}
+                                  style={{ fontFamily: 'DM Mono, monospace' }}>
+                                  {doc.type.toUpperCase().replace('-', ' ')}
+                                </span>
+                                <span className="text-[11px] text-muted" style={{ fontFamily: 'DM Mono, monospace' }}>
+                                  {formatDate(doc.created_at)}
+                                </span>
+                                <button
+                                  onClick={() => handlePreview(doc)}
+                                  className="opacity-30 group-hover:opacity-70 transition-opacity"
+                                >
+                                  <Eye size={14} className="text-gold" />
+                                </button>
+                              </motion.div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
+
+                  {/* ── Activity Timeline + Client Notes (side by side on lg) ── */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
+
+                    {/* Activity Timeline */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-4">
+                        <BookOpen size={13} className="text-muted" />
+                        <p className="text-[11px] tracking-widest text-muted" style={{ fontFamily: 'DM Mono, monospace' }}>
+                          ACTIVITY TIMELINE
+                        </p>
+                      </div>
+                      {activityItems.length === 0 ? (
+                        <div className="border border-border/30 p-8 flex flex-col items-center text-center">
+                          <BookOpen size={20} className="text-muted/20 mb-2" />
+                          <p className="text-[12px] text-muted" style={{ fontFamily: 'Cormorant Garamond, serif' }}>No activity yet.</p>
+                        </div>
+                      ) : (
+                        <div className="border border-border/40 divide-y divide-border/20">
+                          {activityItems.map((item, i) => (
+                            <div key={i} className="flex items-start gap-3 px-4 py-3">
+                              <span className={`mt-0.5 shrink-0 ${
+                                item.type === 'document' ? 'text-[#86efac]' :
+                                item.type === 'message' ? 'text-[#93c5fd]' :
+                                'text-[#fbbf24]'
+                              }`}>
+                                {item.type === 'document' ? <FileText size={12} /> :
+                                 item.type === 'message' ? <MessageSquare size={12} /> :
+                                 <FolderOpen size={12} />}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[12px] text-foreground leading-snug" style={{ fontFamily: 'Lora, serif' }}>
+                                  {item.label}
+                                </p>
+                                {item.sub && (
+                                  <p className="text-[10px] text-muted/70 mt-0.5 truncate" title={item.sub} style={{ fontFamily: 'DM Mono, monospace' }}>
+                                    {item.sub}
+                                  </p>
+                                )}
+                              </div>
+                              <span className="text-[9px] text-muted/50 shrink-0 mt-0.5" style={{ fontFamily: 'DM Mono, monospace' }}>
+                                {new Date(item.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Client Notes */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-4">
+                        <StickyNote size={13} className="text-muted" />
+                        <p className="text-[11px] tracking-widest text-muted" style={{ fontFamily: 'DM Mono, monospace' }}>
+                          MY NOTES
+                        </p>
+                        <span className="text-[10px] text-muted/40" style={{ fontFamily: 'DM Mono, monospace' }}>(private)</span>
+                      </div>
+
+                      {/* Note input */}
+                      <div className="border border-border/40 mb-3">
+                        <textarea
+                          value={noteInput}
+                          onChange={e => setNoteInput(e.target.value)}
+                          placeholder={editingNote ? 'Edit your note…' : 'Add a private note about this case…'}
+                          rows={3}
+                          className="w-full bg-transparent text-[12px] text-foreground placeholder:text-muted/40 outline-none p-3 resize-none"
+                          style={{ fontFamily: 'Lora, serif' }}
+                        />
+                        <div className="flex items-center justify-between px-3 py-2 border-t border-border/30">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={noteShare}
+                              onChange={e => setNoteShare(e.target.checked)}
+                              className="accent-gold"
+                            />
+                            <span className="text-[10px] text-muted flex items-center gap-1" style={{ fontFamily: 'DM Mono, monospace' }}>
+                              <Share2 size={10} /> SHARE WITH LAWYER
+                            </span>
+                          </label>
+                          <div className="flex gap-2">
+                            {editingNote && (
+                              <button
+                                onClick={() => { setEditingNote(null); setNoteInput(''); setNoteShare(false) }}
+                                className="text-[10px] text-muted px-2 py-1 hover:text-foreground"
+                                style={{ fontFamily: 'DM Mono, monospace' }}
+                              >
+                                CANCEL
+                              </button>
+                            )}
+                            <button
+                              onClick={handleSaveNote}
+                              disabled={!noteInput.trim() || savingNote}
+                              className="flex items-center gap-1 text-[10px] border border-gold/40 text-gold px-3 py-1 hover:bg-forest transition-all disabled:opacity-40"
+                              style={{ fontFamily: 'DM Mono, monospace' }}
+                            >
+                              {savingNote
+                                ? <div className="w-3 h-3 border border-gold border-t-transparent animate-spin" />
+                                : <Plus size={11} />}
+                              {editingNote ? 'UPDATE' : 'SAVE'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Notes list */}
+                      {notes.length === 0 ? (
+                        <div className="border border-border/30 p-6 flex flex-col items-center text-center">
+                          <StickyNote size={18} className="text-muted/20 mb-2" />
+                          <p className="text-[11px] text-muted" style={{ fontFamily: 'Cormorant Garamond, serif' }}>No notes yet. Add one above.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
+                          {notes.map(note => (
+                            <div key={note.id} className="border border-border/30 p-3 group relative hover:border-border/60 transition-colors">
+                              <p className="text-[12px] text-foreground leading-relaxed" style={{ fontFamily: 'Lora, serif' }}>
+                                {note.content}
+                              </p>
+                              <div className="flex items-center justify-between mt-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[9px] text-muted/50" style={{ fontFamily: 'DM Mono, monospace' }}>
+                                    {new Date(note.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                  </span>
+                                  {note.share_with_lawyer && (
+                                    <span className="text-[9px] text-gold/60 flex items-center gap-0.5" style={{ fontFamily: 'DM Mono, monospace' }}>
+                                      <Share2 size={8} /> SHARED
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button
+                                    onClick={() => { setEditingNote(note); setNoteInput(note.content); setNoteShare(note.share_with_lawyer) }}
+                                    className="p-1 text-muted/60 hover:text-gold transition-colors"
+                                  >
+                                    <Pencil size={11} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteNote(note.id)}
+                                    className="p-1 text-muted/60 hover:text-red-400 transition-colors"
+                                  >
+                                    <Trash2 size={11} />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                 </div>
-              </div>
               )}
             </motion.div>
           )}
@@ -653,16 +1049,157 @@ export default function ClientDashboardPage() {
                     {previewDoc.title}
                   </span>
                 </div>
-                <button
-                  onClick={() => setPreviewDoc(null)}
-                  className="text-[11px] text-muted hover:text-foreground px-3 py-1 border border-border hover:border-gold/40 transition-all shrink-0 ml-4"
-                  style={{ fontFamily: 'DM Mono, monospace' }}
-                >
-                  CLOSE
-                </button>
+                <div className="flex items-center gap-2 shrink-0 ml-4">
+                  {/* Acknowledge button */}
+                  <button
+                    onClick={() => handleAcknowledge(previewDoc.id)}
+                    disabled={acknowledgments.has(previewDoc.id) || ackingId === previewDoc.id}
+                    className={`flex items-center gap-1.5 text-[10px] border px-3 py-1.5 transition-all ${
+                      acknowledgments.has(previewDoc.id)
+                        ? 'border-[rgba(134,239,172,0.3)] text-[#86efac] opacity-70 cursor-default'
+                        : 'border-border hover:border-gold/40 text-muted hover:text-gold'
+                    }`}
+                    style={{ fontFamily: 'DM Mono, monospace' }}
+                  >
+                    {ackingId === previewDoc.id
+                      ? <div className="w-3 h-3 border border-gold border-t-transparent animate-spin" />
+                      : acknowledgments.has(previewDoc.id)
+                      ? <><CheckCheck size={11} /> REVIEWED</>
+                      : <><CheckCircle2 size={11} /> MARK REVIEWED</>}
+                  </button>
+                  <button
+                    onClick={() => setPreviewDoc(null)}
+                    className="text-[11px] text-muted hover:text-foreground px-3 py-1 border border-border hover:border-gold/40 transition-all"
+                    style={{ fontFamily: 'DM Mono, monospace' }}
+                  >
+                    CLOSE
+                  </button>
+                </div>
               </div>
               <div className="flex-1 overflow-hidden">
                 <DocumentPreview content={previewDoc.content || ''} isGenerating={false} title={previewDoc.title} className="h-full" />
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── AI Case Summary Modal ────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {summaryOpen && (
+          <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 md:p-8"
+            onClick={e => e.target === e.currentTarget && setSummaryOpen(false)}>
+            <motion.div
+              initial={{ scale: 0.96, y: 16 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.96, y: 16 }}
+              transition={{ duration: 0.2 }}
+              className="bg-background border border-border w-full max-w-lg"
+            >
+              <div className="flex items-center justify-between px-5 py-3 border-b border-border/50 bg-surface">
+                <div className="flex items-center gap-2">
+                  <Sparkles size={14} className="text-gold" />
+                  <span className="text-[11px] tracking-widest text-muted" style={{ fontFamily: 'DM Mono, monospace' }}>
+                    AI CASE SUMMARY
+                  </span>
+                </div>
+                <button onClick={() => setSummaryOpen(false)} className="text-[11px] text-muted hover:text-foreground px-3 py-1 border border-border hover:border-gold/40 transition-all" style={{ fontFamily: 'DM Mono, monospace' }}>
+                  CLOSE
+                </button>
+              </div>
+              <div className="p-6">
+                {summaryLoading ? (
+                  <div className="flex flex-col items-center py-8 gap-3">
+                    <div className="w-6 h-6 border border-gold border-t-transparent animate-spin" />
+                    <p className="text-[11px] text-muted" style={{ fontFamily: 'DM Mono, monospace' }}>Generating summary…</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-[14px] text-foreground leading-relaxed whitespace-pre-line" style={{ fontFamily: 'Lora, serif' }}>
+                      {summaryText}
+                    </p>
+                    <p className="text-[9px] text-muted/40 mt-4" style={{ fontFamily: 'DM Mono, monospace' }}>
+                      AI-generated summary · Not legal advice
+                    </p>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Feedback Modal ───────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {feedbackOpen && (
+          <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 md:p-8"
+            onClick={e => e.target === e.currentTarget && setFeedbackOpen(false)}>
+            <motion.div
+              initial={{ scale: 0.96, y: 16 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.96, y: 16 }}
+              transition={{ duration: 0.2 }}
+              className="bg-background border border-border w-full max-w-md"
+            >
+              <div className="flex items-center justify-between px-5 py-3 border-b border-border/50 bg-surface">
+                <div className="flex items-center gap-2">
+                  <Star size={14} className="text-gold" />
+                  <span className="text-[11px] tracking-widest text-muted" style={{ fontFamily: 'DM Mono, monospace' }}>
+                    SHARE FEEDBACK
+                  </span>
+                </div>
+                <button onClick={() => setFeedbackOpen(false)} className="text-[11px] text-muted hover:text-foreground px-3 py-1 border border-border hover:border-gold/40 transition-all" style={{ fontFamily: 'DM Mono, monospace' }}>
+                  CLOSE
+                </button>
+              </div>
+              <div className="p-6">
+                {feedbackDone ? (
+                  <div className="flex flex-col items-center py-6 gap-3 text-center">
+                    <CheckCircle2 size={32} className="text-[#86efac]" />
+                    <p className="text-[15px] text-foreground" style={{ fontFamily: 'Cormorant Garamond, serif' }}>Thank you for your feedback!</p>
+                    <p className="text-[11px] text-muted" style={{ fontFamily: 'DM Mono, monospace' }}>Your response has been recorded.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-5">
+                    <div>
+                      <p className="text-[11px] text-muted mb-3" style={{ fontFamily: 'DM Mono, monospace' }}>HOW WOULD YOU RATE YOUR EXPERIENCE?</p>
+                      <div className="flex gap-2">
+                        {[1, 2, 3, 4, 5].map(s => (
+                          <button
+                            key={s}
+                            onClick={() => setFeedbackRating(s)}
+                            className={`w-10 h-10 flex items-center justify-center border transition-all ${
+                              feedbackRating >= s
+                                ? 'border-gold/60 text-gold bg-forest'
+                                : 'border-border/40 text-muted/40 hover:border-gold/30 hover:text-gold/60'
+                            }`}
+                          >
+                            <Star size={16} className={feedbackRating >= s ? 'fill-gold' : ''} />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[11px] text-muted mb-2" style={{ fontFamily: 'DM Mono, monospace' }}>OPTIONAL COMMENTS</p>
+                      <textarea
+                        value={feedbackComment}
+                        onChange={e => setFeedbackComment(e.target.value)}
+                        rows={3}
+                        placeholder="Share your thoughts…"
+                        className="w-full bg-surface-2 border border-border/40 text-[12px] text-foreground placeholder:text-muted/40 outline-none p-3 resize-none focus:border-gold/40 transition-colors"
+                        style={{ fontFamily: 'Lora, serif' }}
+                      />
+                    </div>
+                    <button
+                      onClick={handleFeedbackSubmit}
+                      disabled={!feedbackRating || feedbackSubmitting}
+                      className="w-full flex items-center justify-center gap-2 text-[11px] border border-gold/40 text-gold py-2.5 hover:bg-forest transition-all disabled:opacity-40"
+                      style={{ fontFamily: 'DM Mono, monospace' }}
+                    >
+                      {feedbackSubmitting ? <div className="w-4 h-4 border border-gold border-t-transparent animate-spin" /> : 'SUBMIT FEEDBACK'}
+                    </button>
+                  </div>
+                )}
               </div>
             </motion.div>
           </div>
@@ -702,6 +1239,48 @@ function CaseCard({ c, selected }: { c: Case; selected?: boolean }) {
         <p className="text-[10px] text-muted/50 mt-1.5" style={{ fontFamily: 'DM Mono, monospace' }}>
           Opened {new Date(c.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
         </p>
+      </div>
+    </div>
+  )
+}
+
+// ─── CaseProgressTracker sub-component ───────────────────────────────────────
+
+function CaseProgressTracker({ case_, events }: { case_: Case; events: CaseTimelineEvent[] }) {
+  const currentStage = getCaseStage(case_, events)
+
+  return (
+    <div className="border border-border/40 px-6 py-5">
+      <div className="flex items-center justify-between relative">
+        {/* Connecting line */}
+        <div className="absolute left-0 right-0 top-[18px] h-[1px] bg-border/40 mx-8" />
+        <div
+          className="absolute left-0 top-[18px] h-[1px] bg-gold/50 mx-8 transition-all duration-700"
+          style={{ width: `${(currentStage / (PROGRESS_STAGES.length - 1)) * 100}%` }}
+        />
+
+        {PROGRESS_STAGES.map((stage, i) => {
+          const done = i < currentStage
+          const active = i === currentStage
+          return (
+            <div key={stage.key} className="flex flex-col items-center gap-2 relative z-10">
+              <div className={`w-9 h-9 flex items-center justify-center border-2 transition-all duration-500 ${
+                done ? 'bg-gold border-gold text-[#0E0E0E]' :
+                active ? 'bg-forest border-gold text-gold' :
+                'bg-surface border-border/40 text-muted/40'
+              }`}>
+                {done ? <CheckCircle2 size={14} className="fill-current" /> : (
+                  <span className="text-[11px]" style={{ fontFamily: 'DM Mono, monospace' }}>{i + 1}</span>
+                )}
+              </div>
+              <span className={`text-[9px] tracking-wider text-center max-w-[60px] leading-tight ${
+                active ? 'text-gold' : done ? 'text-muted' : 'text-muted/40'
+              }`} style={{ fontFamily: 'DM Mono, monospace' }}>
+                {stage.label.toUpperCase()}
+              </span>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

@@ -15,8 +15,9 @@ import { cn } from '@/lib/utils'
 type ReviewRole = 'vendor' | 'employee' | 'client' | 'company'
 
 function RiskScoreGauge({ score }: { score: number }) {
-  const color = score <= 30 ? '#4ade80' : score <= 60 ? '#fb923c' : '#f87171'
-  const pct = score / 100
+  const clamped = Math.max(0, Math.min(100, Math.round(score)))
+  const color = clamped <= 30 ? '#4ade80' : clamped <= 60 ? '#fb923c' : '#f87171'
+  const pct = clamped / 100
 
   return (
     <div className="flex flex-col items-center gap-3">
@@ -41,7 +42,7 @@ function RiskScoreGauge({ score }: { score: number }) {
             className="text-[28px] font-bold"
             style={{ color, fontFamily: 'DM Mono, monospace' }}
           >
-            {score}
+            {clamped}
           </motion.span>
           <span className="text-[9px] text-[rgba(250,247,240,0.4)]" style={{ fontFamily: 'DM Mono, monospace' }}>
             RISK
@@ -57,7 +58,7 @@ function RiskScoreGauge({ score }: { score: number }) {
           background: `${color}10`,
         }}
       >
-        {score <= 30 ? 'LOW RISK' : score <= 60 ? 'MODERATE RISK' : 'HIGH RISK'}
+        {clamped <= 30 ? 'LOW RISK' : clamped <= 60 ? 'MODERATE RISK' : 'HIGH RISK'}
       </div>
     </div>
   )
@@ -258,7 +259,16 @@ export default function ReviewContractPage() {
       )
 
       if (result.analysis) {
-        setAnalysis(result.analysis)
+        // Validate essential fields exist with correct types
+        const a = result.analysis
+        if (typeof a.riskScore !== 'number') a.riskScore = 50
+        if (typeof a.summary !== 'string') a.summary = 'Analysis completed.'
+        if (!Array.isArray(a.riskClauses)) a.riskClauses = []
+        if (!Array.isArray(a.missingClauses)) a.missingClauses = []
+        if (!Array.isArray(a.negotiateClauses)) a.negotiateClauses = []
+        if (!Array.isArray(a.standardClauses)) a.standardClauses = []
+
+        setAnalysis(a)
         // Save independently
         if (user) {
           saveDocument({

@@ -8,27 +8,23 @@ vi.mock('../supabase', () => ({
         auth: {
             getSession: vi.fn(),
         },
-        functions: {
-            invoke: vi.fn(),
-        },
     },
 }))
 
-// Mock fetch for Edge Function calls
+// Mock fetch
 global.fetch = vi.fn()
 
 describe('generateDocument', () => {
     beforeEach(() => {
         vi.resetAllMocks()
-            // Default session mock
-            ; (supabase.auth.getSession as any).mockResolvedValue({
-                data: { session: { access_token: 'mock-token' } },
-                error: null,
-            })
+        ;(supabase.auth.getSession as any).mockResolvedValue({
+            data: { session: { access_token: 'mock-token' } },
+            error: null,
+        })
     })
 
     it('should throw error if not authenticated', async () => {
-        ; (supabase.auth.getSession as any).mockResolvedValue({
+        ;(supabase.auth.getSession as any).mockResolvedValue({
             data: { session: null },
             error: null,
         })
@@ -40,12 +36,12 @@ describe('generateDocument', () => {
         })).rejects.toThrow('Not authenticated')
     })
 
-    it('should call the Edge Function with correct parameters', async () => {
+    it('should call /api/generate with correct parameters', async () => {
         const mockResponse = {
             ok: true,
             json: () => Promise.resolve({ document: 'Generated Content' }),
         }
-            ; (global.fetch as any).mockResolvedValue(mockResponse)
+        ;(global.fetch as any).mockResolvedValue(mockResponse)
 
         const result = await generateDocument({
             module: 'notice',
@@ -54,14 +50,18 @@ describe('generateDocument', () => {
         })
 
         expect(global.fetch).toHaveBeenCalledWith(
-            expect.stringContaining('/functions/v1/generate-document'),
+            '/api/generate',
             expect.objectContaining({
                 method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: 'Bearer mock-token',
+                },
                 body: JSON.stringify({
                     module: 'notice',
                     language: 'ta',
                     payload: { prompt: 'Draft a notice' }
-                })
+                }),
             })
         )
         expect(result.document).toBe('Generated Content')
@@ -72,7 +72,7 @@ describe('generateDocument', () => {
             ok: false,
             text: () => Promise.resolve('API Error Message'),
         }
-            ; (global.fetch as any).mockResolvedValue(mockResponse)
+        ;(global.fetch as any).mockResolvedValue(mockResponse)
 
         await expect(generateDocument({
             module: 'notice',

@@ -25,7 +25,12 @@ import IntakePage from '@/pages/Intake'
 function RoleRedirect() {
   const { user, role, loading } = useAuth()
 
-  if (loading) return null
+  if (loading) return (
+    <div className="h-screen flex flex-col items-center justify-center bg-[#0E0E0E] gap-3">
+      <div className="w-6 h-6 border border-[#C9A84C] border-t-transparent animate-spin" />
+      <p className="text-[11px] text-[rgba(250,247,240,0.4)]" style={{ fontFamily: 'DM Mono, monospace' }}>LOADING…</p>
+    </div>
+  )
   if (!user) return <Navigate to="/login" replace />
   if (role === 'client') return <Navigate to="/client/dashboard" replace />
   return <Navigate to="/dashboard" replace />

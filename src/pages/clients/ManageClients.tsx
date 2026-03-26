@@ -110,8 +110,8 @@ export default function ManageClientsPage() {
     useEffect(() => { fetchAll() }, [fetchAll])
 
     const loadCaseDetail = async (c: Case) => {
+        // Preserve current tab when switching cases; reset data for lazily-loaded tabs
         setSelectedCase(c)
-        setActiveTab('clients')
         setNotes([])
         setRequests([])
         setAuditLogs([])
@@ -700,7 +700,7 @@ export default function ManageClientsPage() {
                                                         {auditLogs.map(log => (
                                                             <tr key={log.id} className="border-b border-[rgba(201,168,76,0.05)] hover:bg-[#161616]">
                                                                 <td className="px-3 py-2 text-[rgba(250,247,240,0.6)]">{log.client?.full_name ?? '—'}</td>
-                                                                <td className="px-3 py-2 text-[rgba(250,247,240,0.6)] truncate max-w-[120px]">{log.document?.title ?? '—'}</td>
+                                                                <td className="px-3 py-2 text-[rgba(250,247,240,0.6)] truncate max-w-[180px]" title={log.document?.title}>{log.document?.title ?? '—'}</td>
                                                                 <td className="px-3 py-2"><span className="text-[9px] border border-[rgba(201,168,76,0.2)] px-1.5 py-0.5 text-[rgba(201,168,76,0.7)]">{log.action.toUpperCase()}</span></td>
                                                                 <td className="px-3 py-2 text-[rgba(250,247,240,0.4)]">{formatDate(log.created_at)}</td>
                                                             </tr>
@@ -716,7 +716,7 @@ export default function ManageClientsPage() {
                                     <div>
                                         <p className="text-[11px] tracking-widest text-[rgba(250,247,240,0.4)] mb-3" style={{ fontFamily: 'DM Mono, monospace' }}>STATUS CHANGE HISTORY</p>
                                         {statusHistory.length === 0 ? (
-                                            <p className="text-[12px] text-[rgba(250,247,240,0.3)] py-4 text-center" style={{ fontFamily: 'DM Mono, monospace' }}>No status changes recorded.</p>
+                                            <p className="text-[12px] text-[rgba(250,247,240,0.3)] py-4 text-center" style={{ fontFamily: 'DM Mono, monospace' }}>No status changes yet. Changes appear here as the case progresses.</p>
                                         ) : (
                                             <div className="space-y-2">
                                                 {statusHistory.map(h => (

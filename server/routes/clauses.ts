@@ -30,7 +30,11 @@ clausesRouter.get('/', async (req, res, next) => {
       .order('created_at', { ascending: false })
 
     if (category) query = query.eq('category', category)
-    if (search) query = query.ilike('title', `%${search}%`)
+    if (search) {
+      // Escape SQL LIKE wildcards to prevent pattern injection
+      const safeSearch = search.replace(/[%_\\]/g, '\\$&')
+      query = query.ilike('title', `%${safeSearch}%`)
+    }
 
     const { data, error } = await query
     if (error) throw error

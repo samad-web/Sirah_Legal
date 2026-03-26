@@ -265,15 +265,20 @@ export function DocumentPreview({
             transition={{ duration: 0.2 }}
             className="border-t border-[rgba(201,168,76,0.2)] bg-[#0a0a0a] p-3 flex items-center gap-2 flex-wrap"
           >
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={<Edit3 size={12} />}
-              onClick={() => setEditingLine(0)}
-              className="text-[10px]"
-            >
-              EDIT INLINE
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={<Edit3 size={12} />}
+                onClick={() => setEditingLine(0)}
+                className="text-[10px]"
+              >
+                EDIT INLINE
+              </Button>
+              <span className="text-[9px] text-muted/50" style={{ fontFamily: 'DM Mono, monospace' }} title="Inline edits are temporary — export to save changes">
+                (not saved to server)
+              </span>
+            </div>
 
             {onRegenerateSection && (
               <div className="relative">

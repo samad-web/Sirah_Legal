@@ -96,7 +96,10 @@ export async function requireAuth(
   if (local) {
     // Fast path: verified locally, no network call
     userId = local.sub
-    jwtRole = (local.user_metadata?.role as string) ?? 'lawyer'
+    // Default to empty string (not 'lawyer') — the DB lookup in getAuthorizedRole
+    // is the source of truth. This prevents accidental privilege escalation if
+    // JWT metadata is missing or tampered with.
+    jwtRole = (local.user_metadata?.role as string) ?? ''
   } else {
     // Fallback: verify via Supabase Auth REST API using the anon key.
     // The service-role client's auth.getUser() does NOT work for user JWT
@@ -108,24 +111,34 @@ export async function requireAuth(
     }
     let authUser: { id: string; user_metadata?: Record<string, unknown> } | null = null
     try {
-      const resp = await fetch(`${supabaseUrl}/auth/v1/user`, {
-        headers: {
-          apikey: supabaseAnonKey,
-          Authorization: `Bearer ${token}`,
-        },
-      })
-      if (resp.ok) {
-        authUser = await resp.json() as { id: string; user_metadata?: Record<string, unknown> }
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 10_000)
+      try {
+        const resp = await fetch(`${supabaseUrl}/auth/v1/user`, {
+          headers: {
+            apikey: supabaseAnonKey,
+            Authorization: `Bearer ${token}`,
+          },
+          signal: controller.signal,
+        })
+        if (resp.ok) {
+          const body = await resp.json() as Record<string, unknown>
+          if (typeof body?.id === 'string') {
+            authUser = body as { id: string; user_metadata?: Record<string, unknown> }
+          }
+        }
+      } finally {
+        clearTimeout(timeout)
       }
     } catch {
-      // network error — fall through to 401
+      // network / timeout error — fall through to 401
     }
     if (!authUser?.id) {
       res.status(401).json({ error: 'Invalid or expired token' })
       return
     }
     userId = authUser.id
-    jwtRole = (authUser.user_metadata?.role as string) ?? 'lawyer'
+    jwtRole = (authUser.user_metadata?.role as string) ?? ''
   }
 
   // Resolve the authoritative role from the DB (JWT metadata is user-writable

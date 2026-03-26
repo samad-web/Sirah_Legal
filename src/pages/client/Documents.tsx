@@ -39,6 +39,14 @@ export default function ClientDocumentsPage() {
     const [filterLang, setFilterLang] = useState<FilterLang>('all')
     const [previewDoc, setPreviewDoc] = useState<Document | null>(null)
 
+    // Close modal on Escape key
+    useEffect(() => {
+        if (!previewDoc) return
+        const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setPreviewDoc(null) }
+        document.addEventListener('keydown', handler)
+        return () => document.removeEventListener('keydown', handler)
+    }, [previewDoc])
+
     const fetchDocuments = useCallback(() => {
         if (!user) return
         getClientDocuments(user.id)
@@ -140,8 +148,9 @@ export default function ClientDocumentsPage() {
 
             {/* Table */}
             {loading ? (
-                <div className="flex items-center justify-center py-16">
+                <div className="flex flex-col items-center justify-center py-16 gap-3">
                     <div className="w-6 h-6 border border-[#C9A84C] border-t-transparent animate-spin" />
+                    <p className="text-[11px] text-[rgba(250,247,240,0.4)]" style={{ fontFamily: 'DM Mono, monospace' }}>LOADING DOCUMENTS…</p>
                 </div>
             ) : filtered.length === 0 ? (
                 <div className="py-16 text-center border border-[rgba(201,168,76,0.1)]">

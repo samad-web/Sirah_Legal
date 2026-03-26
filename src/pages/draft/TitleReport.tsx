@@ -3,14 +3,18 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { MapPin, Upload, CheckCircle, AlertTriangle, FileText } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { generateDocument, type Language } from '@/lib/generate'
-import { saveDocument, incrementDocumentCount } from '@/lib/api'
+import { saveDocument, incrementDocumentCount, linkDocumentToCase } from '@/lib/api'
 import { exportToPdf } from '@/lib/pdf-export'
 import { exportToDocx } from '@/lib/docx-export'
 import { DocumentPreview } from '@/components/ui/DocumentPreview'
+import { DocumentEditor } from '@/components/documents/DocumentEditor'
 import { FormField, Input, Select, Textarea } from '@/components/ui/FormFields'
 import { Button } from '@/components/ui/Button'
-import { INDIAN_STATES, formatDate } from '@/lib/utils'
+import { INDIAN_STATES, formatDate, textToHtml } from '@/lib/utils'
 import { DateConfirmModal } from '@/components/ui/DateConfirmModal'
+import { useToast } from '@/contexts/ToastContext'
+import { CaseAndSimilarDocs } from '@/components/draft/CaseAndSimilarDocs'
+import { ExportDisclaimer, useExportDisclaimer } from '@/components/ui/ExportDisclaimer'
 
 const DOCUMENT_TYPES = [
   { id: 'sale-deed', label: 'Sale Deed(s)', multiple: true },
@@ -79,6 +83,10 @@ Generate the complete title research report with all required sections:
 
 export default function TitleReportPage() {
   const { profile, user } = useAuth()
+  const toast = useToast()
+  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null)
+  const [savedDocIds, setSavedDocIds] = useState<Record<string, string>>({})
+  const disclaimer = useExportDisclaimer()
   const [form, setForm] = useState<FormData>({
     surveyNo: '',
     extent: '',
@@ -161,11 +169,24 @@ export default function TitleReportPage() {
               user_id: user.id, title, type: 'title-report', language: lang,
               content: result.document, analysis: null, status: 'draft',
             })
-              .then(() => {
+              .then(async (savedDoc) => {
                 incrementDocumentCount(user.id)
                 window.dispatchEvent(new CustomEvent('lexdraft:document-saved'))
+                if (savedDoc?.id) {
+                  setSavedDocIds(prev => ({ ...prev, [lang]: savedDoc.id }))
+                  if (selectedCaseId) {
+                    await linkDocumentToCase(selectedCaseId, savedDoc.id).catch(() => {})
+                  }
+                }
+                toast.success('Title report saved — you can now edit it', {
+                  label: 'View in Documents →',
+                  onClick: () => window.location.assign('/documents'),
+                })
               })
-              .catch(err => console.error('[LexDraft] Failed to save title report to DB:', err))
+              .catch(err => {
+                console.error('[LexDraft] Failed to save title report to DB:', err)
+                toast.error('Failed to save title report to library')
+              })
           }
         }
       } catch (err) {
@@ -209,6 +230,13 @@ export default function TitleReportPage() {
         </div>
 
         <div className="px-6 py-6 space-y-6 flex-1">
+          {/* Case & Similar Documents */}
+          <CaseAndSimilarDocs
+            documentType="title-report"
+            onCaseSelect={(caseId) => setSelectedCaseId(caseId)}
+            onDocumentClick={(docId) => window.open(`/documents?preview=${docId}`, '_blank')}
+          />
+
           {/* Property Details */}
           <section>
             <p className="text-[11px] tracking-widest text-[rgba(201,168,76,0.7)] mb-4" style={{ fontFamily: 'DM Mono, monospace' }}>
@@ -405,16 +433,43 @@ export default function TitleReportPage() {
             ))}
           </div>
         )}
-        <DocumentPreview
-          content={documents[activeDocLang] ?? ''}
-          isGenerating={isGenerating}
-          title={documentTitle || 'Title Research Report'}
-          onExportPdf={() => exportToPdf(documents[activeDocLang] ?? '', documentTitle, profile, activeDocLang)}
-          onExportDocx={() => exportToDocx(documents[activeDocLang] ?? '', documentTitle, profile, activeDocLang)}
-          className="flex-1"
-        />
+        {savedDocIds[activeDocLang] && !isGenerating ? (
+          <div className="flex-1 overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-2 border-b border-border/30 bg-[#0a0a0a]">
+              <button
+                onClick={() => disclaimer.requestExport('PDF', () => exportToPdf(documents[activeDocLang] ?? '', documentTitle, profile, activeDocLang))}
+                className="text-[10px] text-muted hover:text-gold border border-border/40 px-2 py-1 transition-colors"
+                style={{ fontFamily: 'DM Mono, monospace' }}
+              >
+                PDF
+              </button>
+              <button
+                onClick={() => disclaimer.requestExport('DOCX', () => exportToDocx(documents[activeDocLang] ?? '', documentTitle, profile, activeDocLang))}
+                className="text-[10px] text-muted hover:text-gold border border-border/40 px-2 py-1 transition-colors"
+                style={{ fontFamily: 'DM Mono, monospace' }}
+              >
+                DOCX
+              </button>
+            </div>
+            <DocumentEditor
+              documentId={savedDocIds[activeDocLang]}
+              initialContent={textToHtml(documents[activeDocLang] ?? '')}
+            />
+          </div>
+        ) : (
+          <DocumentPreview
+            content={documents[activeDocLang] ?? ''}
+            isGenerating={isGenerating}
+            title={documentTitle || 'Title Research Report'}
+            onExportPdf={() => disclaimer.requestExport('PDF', () => exportToPdf(documents[activeDocLang] ?? '', documentTitle, profile, activeDocLang))}
+            onExportDocx={() => disclaimer.requestExport('DOCX', () => exportToDocx(documents[activeDocLang] ?? '', documentTitle, profile, activeDocLang))}
+            className="flex-1"
+          />
+        )}
       </div>
       </div>{/* end flex-1 row */}
+
+      <ExportDisclaimer open={disclaimer.open} format={disclaimer.format} onConfirm={disclaimer.confirm} onCancel={disclaimer.cancel} />
     </div>
   )
 }

@@ -3,16 +3,20 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { PenLine, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { generateDocument, type Language } from '@/lib/generate'
-import { saveDocument, incrementDocumentCount } from '@/lib/api'
+import { saveDocument, incrementDocumentCount, linkDocumentToCase } from '@/lib/api'
 import { exportToPdf } from '@/lib/pdf-export'
 import { exportToDocx } from '@/lib/docx-export'
 import { DocumentPreview } from '@/components/ui/DocumentPreview'
+import { DocumentEditor } from '@/components/documents/DocumentEditor'
+import { useToast } from '@/contexts/ToastContext'
+import { CaseAndSimilarDocs } from '@/components/draft/CaseAndSimilarDocs'
+import { ExportDisclaimer, useExportDisclaimer } from '@/components/ui/ExportDisclaimer'
 import {
   FormField, Input, Textarea, Select,
   ProgressSteps, SelectionCard,
 } from '@/components/ui/FormFields'
 import { Button } from '@/components/ui/Button'
-import { INDIAN_STATES } from '@/lib/utils'
+import { INDIAN_STATES, textToHtml } from '@/lib/utils'
 import { DateConfirmModal } from '@/components/ui/DateConfirmModal'
 
 type ContractType = 'nda' | 'employment' | 'vendor' | 'consultancy' | 'freelance'
@@ -45,6 +49,11 @@ interface FormData {
   probationPeriod: string
   noticePeriod: string
   nonSolicitation: boolean
+  // Vendor / Consultancy / Freelance fields
+  scopeOfServices: string
+  paymentTerms: string
+  contractDuration: string
+  deliverables: string
   // General
   governingState: string
   disputeResolution: DisputeResolution
@@ -94,6 +103,13 @@ EMPLOYMENT TERMS:
 - Probation Period: ${form.probationPeriod} months
 - Notice Period: ${form.noticePeriod} days
 - Non-Solicitation: ${form.nonSolicitation ? 'Yes' : 'No'}`
+  } else if (form.contractType === 'vendor' || form.contractType === 'consultancy' || form.contractType === 'freelance') {
+    termsBlock = `
+${form.contractType.toUpperCase()} AGREEMENT TERMS:
+- Scope of Services: ${form.scopeOfServices || '[To be detailed]'}
+- Deliverables: ${form.deliverables || '[To be detailed]'}
+- Contract Duration: ${form.contractDuration} months
+- Payment Terms: ${form.paymentTerms || '[To be detailed]'}`
   }
 
   return `Draft a ${form.contractType?.toUpperCase()} under Indian law.
@@ -126,6 +142,7 @@ Draft the complete contract with numbered clauses (1., 1.1, 1.2 etc.), all stand
 
 export default function DraftContractPage() {
   const { profile, user } = useAuth()
+  const toast = useToast()
   const [step, setStep] = useState(0)
   const [mobilePanel, setMobilePanel] = useState<'form' | 'preview'>('form')
   const [form, setForm] = useState<FormData>({
@@ -145,6 +162,10 @@ export default function DraftContractPage() {
     probationPeriod: '6',
     noticePeriod: '30',
     nonSolicitation: false,
+    scopeOfServices: '',
+    paymentTerms: '',
+    contractDuration: '12',
+    deliverables: '',
     governingState: profile?.default_state || '',
     disputeResolution: 'arbitration',
     arbitrationSeat: profile?.default_state || '',
@@ -156,6 +177,9 @@ export default function DraftContractPage() {
   const [documentTitle, setDocumentTitle] = useState('')
   const [generateError, setGenerateError] = useState('')
   const [showDateModal, setShowDateModal] = useState(false)
+  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null)
+  const [savedDocIds, setSavedDocIds] = useState<Record<string, string>>({})
+  const disclaimer = useExportDisclaimer()
 
   const setPartyA = (updates: Partial<PartyDetails>) =>
     setForm(prev => ({ ...prev, partyA: { ...prev.partyA, ...updates } }))
@@ -164,6 +188,7 @@ export default function DraftContractPage() {
 
   type SimpleStringKey = 'ndaPurpose' | 'ndaDuration' | 'ndaDefinition' | 'ndaExclusions' | 'ndaNonCompeteDuration' |
     'designation' | 'department' | 'ctc' | 'probationPeriod' | 'noticePeriod' |
+    'scopeOfServices' | 'paymentTerms' | 'contractDuration' | 'deliverables' |
     'governingState' | 'arbitrationSeat'
 
   const setField = (key: SimpleStringKey, value: string) =>
@@ -205,11 +230,24 @@ export default function DraftContractPage() {
               user_id: user.id, title, type: 'contract', language: lang,
               content: result.document, analysis: null, status: 'draft',
             })
-              .then(() => {
+              .then(async (savedDoc) => {
                 incrementDocumentCount(user.id)
                 window.dispatchEvent(new CustomEvent('lexdraft:document-saved'))
+                if (savedDoc?.id) {
+                  setSavedDocIds(prev => ({ ...prev, [lang]: savedDoc.id }))
+                  if (selectedCaseId) {
+                    await linkDocumentToCase(selectedCaseId, savedDoc.id).catch(() => {})
+                  }
+                }
+                toast.success('Contract saved — you can now edit it', {
+                  label: 'View in Documents →',
+                  onClick: () => window.location.assign('/documents'),
+                })
               })
-              .catch(err => console.error('[LexDraft] Failed to save contract to DB:', err))
+              .catch(err => {
+                console.error('[LexDraft] Failed to save contract to DB:', err)
+                toast.error('Failed to save contract to library')
+              })
           }
         }
       } catch (err) {
@@ -225,9 +263,14 @@ export default function DraftContractPage() {
     if (step === 0) return !!form.contractType
     if (step === 1) return !!(form.partyA.name && form.partyB.name)
     if (step === 2) {
-      if (form.contractType === 'nda') return !!(form.ndaPurpose && form.ndaDuration)
+      if (form.contractType === 'nda') {
+        if (!form.ndaPurpose || !form.ndaDuration) return false
+        if (form.ndaNonCompete && !form.ndaNonCompeteDuration) return false
+        return true
+      }
       if (form.contractType === 'employment') return !!(form.designation && form.ctc)
-      return true
+      // vendor / consultancy / freelance — require scope at minimum
+      return !!form.scopeOfServices
     }
     return !!form.governingState
   }
@@ -277,6 +320,14 @@ export default function DraftContractPage() {
                     description={t.desc}
                   />
                 ))}
+
+                <div className="mt-6">
+                  <CaseAndSimilarDocs
+                    documentType="contract"
+                    onCaseSelect={(caseId) => setSelectedCaseId(caseId)}
+                    onDocumentClick={(docId) => window.open(`/documents?preview=${docId}`, '_blank')}
+                  />
+                </div>
               </motion.div>
             )}
 
@@ -369,11 +420,20 @@ export default function DraftContractPage() {
                 )}
 
                 {['vendor', 'consultancy', 'freelance'].includes(form.contractType as string) && (
-                  <div className="p-6 border border-[rgba(201,168,76,0.15)] text-center">
-                    <p className="text-[14px] text-[rgba(250,247,240,0.5)]" style={{ fontFamily: 'Lora, serif' }}>
-                      The AI will generate standard terms for a {CONTRACT_TYPES.find(t => t.value === form.contractType)?.label}. Proceed to jurisdiction settings.
-                    </p>
-                  </div>
+                  <>
+                    <FormField label="Scope of Services" required hint="Describe the services to be provided">
+                      <Textarea value={form.scopeOfServices} onChange={e => setField('scopeOfServices', e.target.value)} rows={4} placeholder="e.g. Design, develop, and deploy a web application for..." />
+                    </FormField>
+                    <FormField label="Deliverables" hint="Key deliverables or milestones">
+                      <Textarea value={form.deliverables} onChange={e => setField('deliverables', e.target.value)} rows={3} placeholder="e.g. Phase 1: Wireframes. Phase 2: Prototype. Phase 3: Final delivery." />
+                    </FormField>
+                    <FormField label="Contract Duration (months)">
+                      <Input type="number" value={form.contractDuration} onChange={e => setField('contractDuration', e.target.value)} />
+                    </FormField>
+                    <FormField label="Payment Terms" hint="Fee structure, milestones, payment schedule">
+                      <Textarea value={form.paymentTerms} onChange={e => setField('paymentTerms', e.target.value)} rows={3} placeholder="e.g. 30% upfront, 40% on milestone, 30% on completion. Net-30 payment cycle." />
+                    </FormField>
+                  </>
                 )}
               </motion.div>
             )}
@@ -471,16 +531,43 @@ export default function DraftContractPage() {
             ))}
           </div>
         )}
-        <DocumentPreview
-          content={documents[activeDocLang] ?? ''}
-          isGenerating={isGenerating}
-          title={documentTitle || 'Contract'}
-          onExportPdf={() => exportToPdf(documents[activeDocLang] ?? '', documentTitle, profile, activeDocLang)}
-          onExportDocx={() => exportToDocx(documents[activeDocLang] ?? '', documentTitle, profile, activeDocLang)}
-          className="flex-1"
-        />
+        {savedDocIds[activeDocLang] && !isGenerating ? (
+          <div className="flex-1 overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-2 border-b border-border/30 bg-[#0a0a0a]">
+              <button
+                onClick={() => disclaimer.requestExport('PDF', () => exportToPdf(documents[activeDocLang] ?? '', documentTitle, profile, activeDocLang))}
+                className="text-[10px] text-muted hover:text-gold border border-border/40 px-2 py-1 transition-colors"
+                style={{ fontFamily: 'DM Mono, monospace' }}
+              >
+                PDF
+              </button>
+              <button
+                onClick={() => disclaimer.requestExport('DOCX', () => exportToDocx(documents[activeDocLang] ?? '', documentTitle, profile, activeDocLang))}
+                className="text-[10px] text-muted hover:text-gold border border-border/40 px-2 py-1 transition-colors"
+                style={{ fontFamily: 'DM Mono, monospace' }}
+              >
+                DOCX
+              </button>
+            </div>
+            <DocumentEditor
+              documentId={savedDocIds[activeDocLang]}
+              initialContent={textToHtml(documents[activeDocLang] ?? '')}
+            />
+          </div>
+        ) : (
+          <DocumentPreview
+            content={documents[activeDocLang] ?? ''}
+            isGenerating={isGenerating}
+            title={documentTitle || 'Contract'}
+            onExportPdf={() => disclaimer.requestExport('PDF', () => exportToPdf(documents[activeDocLang] ?? '', documentTitle, profile, activeDocLang))}
+            onExportDocx={() => disclaimer.requestExport('DOCX', () => exportToDocx(documents[activeDocLang] ?? '', documentTitle, profile, activeDocLang))}
+            className="flex-1"
+          />
+        )}
       </div>
       </div>{/* end flex-1 row */}
+
+      <ExportDisclaimer open={disclaimer.open} format={disclaimer.format} onConfirm={disclaimer.confirm} onCancel={disclaimer.cancel} />
     </div>
   )
 }

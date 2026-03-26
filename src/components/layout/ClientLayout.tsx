@@ -2,8 +2,10 @@ import { Navigate, Outlet, useLocation, NavLink } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { LayoutGrid, Folder } from 'lucide-react'
 import { ClientSidebar } from './ClientSidebar'
+import { NotificationBell } from '@/components/client/NotificationBell'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 
 const clientMobileNav = [
   { to: '/client/dashboard', icon: <LayoutGrid size={20} />, label: 'Home' },
@@ -51,7 +53,9 @@ export function ClientLayout() {
             transition={{ duration: 0.3, ease: 'easeInOut' }}
             className="h-full overflow-y-auto pb-16 md:pb-0"
           >
-            <Outlet />
+            <ErrorBoundary>
+              <Outlet />
+            </ErrorBoundary>
           </motion.div>
         </AnimatePresence>
       </main>
@@ -75,6 +79,9 @@ export function ClientLayout() {
             </span>
           </NavLink>
         ))}
+        <div className="flex-1 flex flex-col items-center justify-center py-2 gap-0.5">
+          <NotificationBell />
+        </div>
       </nav>
     </div>
   )

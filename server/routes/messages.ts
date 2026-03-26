@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { supabase } from '../lib/supabase.js'
 import { requireAuth } from '../middleware/auth.js'
 import type { AuthRequest } from '../middleware/auth.js'
+import { notifyAdvocateNewMessage } from '../services/notifications.js'
 
 export const messagesRouter = Router()
 
@@ -70,6 +71,29 @@ messagesRouter.post('/:caseId', async (req, res, next) => {
       .single()
 
     if (error) throw error
+
+    // Notify advocate if the sender is a client
+    const { data: caseData } = await supabase
+      .from('cases')
+      .select('title, lawyer_id')
+      .eq('id', caseId)
+      .single()
+
+    if (caseData && userId !== caseData.lawyer_id) {
+      const { data: clientProfile } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', userId)
+        .maybeSingle()
+
+      notifyAdvocateNewMessage(
+        caseData.lawyer_id,
+        clientProfile?.full_name ?? 'Your client',
+        caseData.title,
+        caseId,
+      ).catch(() => {/* non-critical */})
+    }
+
     res.status(201).json(data)
   } catch (err) {
     next(err)

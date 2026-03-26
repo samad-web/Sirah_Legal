@@ -18,6 +18,8 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [unconfirmed, setUnconfirmed] = useState(false)
   const [resendSent, setResendSent] = useState(false)
+  const [resetSent, setResetSent] = useState(false)
+  const [resetLoading, setResetLoading] = useState(false)
 
   const { signIn, signUp, signInWithGoogle, user, loading: authLoading } = useAuth()
 
@@ -207,8 +209,37 @@ export default function LoginPage() {
               </div>
             </FormField>
 
+            {mode === 'login' && (
+              <div className="flex justify-end -mt-1">
+                {resetSent ? (
+                  <p className="text-[11px] text-green-400" style={{ fontFamily: 'DM Mono, monospace' }}>
+                    Reset link sent — check your inbox.
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={resetLoading}
+                    onClick={async () => {
+                      if (!email) { setError('Enter your email first, then click forgot password.'); return }
+                      setResetLoading(true)
+                      setError('')
+                      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email, {
+                        redirectTo: `${window.location.origin}/reset-password`,
+                      })
+                      setResetLoading(false)
+                      if (resetErr) { setError(resetErr.message) } else { setResetSent(true) }
+                    }}
+                    className="text-[11px] text-[rgba(250,247,240,0.45)] hover:text-[#C9A84C] transition-colors disabled:opacity-50"
+                    style={{ fontFamily: 'DM Mono, monospace' }}
+                  >
+                    {resetLoading ? 'Sending...' : 'Forgot password?'}
+                  </button>
+                )}
+              </div>
+            )}
+
             {error && (
-              <p className="text-[11px] text-[#f87171] py-1" style={{ fontFamily: 'DM Mono, monospace' }}>
+              <p className="text-[11px] text-[#f87171] py-1" role="alert" aria-live="polite" style={{ fontFamily: 'DM Mono, monospace' }}>
                 {error}
               </p>
             )}
@@ -255,7 +286,8 @@ export default function LoginPage() {
 
           <button
             onClick={handleGoogle}
-            className="w-full h-11 border border-[rgba(201,168,76,0.25)] text-[rgba(250,247,240,0.7)] hover:border-[rgba(201,168,76,0.5)] hover:text-[#FAF7F0] transition-all flex items-center justify-center gap-3 text-[12px]"
+            disabled={loading}
+            className="w-full h-11 border border-[rgba(201,168,76,0.25)] text-[rgba(250,247,240,0.7)] hover:border-[rgba(201,168,76,0.5)] hover:text-[#FAF7F0] transition-all flex items-center justify-center gap-3 text-[12px] disabled:opacity-40 disabled:cursor-not-allowed"
             style={{ fontFamily: 'DM Mono, monospace' }}
           >
             <svg width="16" height="16" viewBox="0 0 24 24">

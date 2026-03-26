@@ -63,35 +63,38 @@ export async function generateDocument(
     throw new Error(`Generation failed: ${error}`)
   }
 
-  // Handle SSE streaming
+  // Handle SSE streaming — buffer partial lines across chunks
   if (onStream && response.body) {
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
     let fullText = ''
     let finished = false
+    let buffer = ''
 
     while (!finished) {
       const { done, value } = await reader.read()
       if (done) break
 
-      const chunk = decoder.decode(value, { stream: true })
-      const lines = chunk.split('\n')
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      // Keep the last (possibly incomplete) line in the buffer
+      buffer = lines.pop() ?? ''
 
       for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6).trim()
-          if (data === '[DONE]') { finished = true; break }
-          try {
-            const parsed = JSON.parse(data) as { chunk?: string; error?: string }
-            if (parsed.chunk) {
-              fullText += parsed.chunk
-              onStream(sanitizeMarkdown(fullText))
-            }
-            if (parsed.error) throw new Error(parsed.error)
-          } catch (e) {
-            if (e instanceof SyntaxError) continue // non-JSON line, skip
-            throw e
+        const trimmed = line.trim()
+        if (!trimmed || !trimmed.startsWith('data: ')) continue
+        const data = trimmed.slice(6).trim()
+        if (data === '[DONE]') { finished = true; break }
+        try {
+          const parsed = JSON.parse(data) as { chunk?: string; error?: string }
+          if (parsed.chunk) {
+            fullText += parsed.chunk
+            onStream(sanitizeMarkdown(fullText))
           }
+          if (parsed.error) throw new Error(parsed.error)
+        } catch (e) {
+          if (e instanceof SyntaxError) continue // partial JSON, will be in next chunk
+          throw e
         }
       }
     }

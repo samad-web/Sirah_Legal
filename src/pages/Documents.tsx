@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
+/* eslint-disable react-hooks/exhaustive-deps */
 import { motion, AnimatePresence } from 'framer-motion'
 import { Search, Trash2, Download, FileText, Eye, X, ChevronDown, History } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
@@ -10,9 +11,11 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/FormFields'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { DocumentPreview } from '@/components/ui/DocumentPreview'
+import { DocumentEditor } from '@/components/documents/DocumentEditor'
 import { formatDate, cn } from '@/lib/utils'
 import { exportToPdf } from '@/lib/pdf-export'
 import { exportToDocx } from '@/lib/docx-export'
+import { useToast } from '@/contexts/ToastContext'
 
 const PAGE_SIZE = 20
 
@@ -35,6 +38,7 @@ const TYPE_COLORS: Record<string, string> = {
 
 export default function DocumentsPage() {
   const { user, profile } = useAuth()
+  const toast = useToast()
   const [documents, setDocuments] = useState<Document[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -52,6 +56,9 @@ export default function DocumentsPage() {
   const [versions, setVersions] = useState<DocumentVersion[]>([])
   const [loadingVersions, setLoadingVersions] = useState(false)
   const [previewVersion, setPreviewVersion] = useState<DocumentVersion | null>(null)
+  const [fetchError, setFetchError] = useState('')
+  const [deleteError, setDeleteError] = useState('')
+  const [versionsError, setVersionsError] = useState('')
 
   const [debouncedSearch, setDebouncedSearch] = useState('')
 
@@ -67,22 +74,35 @@ export default function DocumentsPage() {
     else setLoadingMore(true)
 
     try {
+      setFetchError('')
       const result = await getUserDocuments(user.id, { page: pageNum, limit: PAGE_SIZE, search: searchTerm || undefined })
       setTotal(result.total)
       setDocuments(prev => replace ? result.data : [...prev, ...result.data])
       setPage(pageNum)
     } catch (err) {
       console.error('[LexDraft] Documents: failed to load:', err)
+      setFetchError('Failed to load documents. Please try again.')
     } finally {
       setLoading(false)
       setLoadingMore(false)
     }
   }, [user, debouncedSearch])
 
+  // Close modals on Escape key
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (previewDoc) { setPreviewDoc(null); return }
+      if (versionsDoc) { setVersionsDoc(null); setPreviewVersion(null); return }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [previewDoc, versionsDoc])
+
   // Re-fetch from page 1 whenever debounced search changes (also handles initial load)
   useEffect(() => {
     fetchPage(1, true, debouncedSearch)
-  }, [debouncedSearch]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [debouncedSearch])
 
   // Refresh when a document is saved from a draft page
   useEffect(() => {
@@ -125,10 +145,19 @@ export default function DocumentsPage() {
       message: `${selectedIds.size} document${selectedIds.size !== 1 ? 's' : ''} will be permanently deleted.`,
       onConfirm: async () => {
         setConfirmDialog(null)
-        await Promise.all([...selectedIds].map(id => deleteDocument(id)))
-        setDocuments(docs => docs.filter(d => !selectedIds.has(d.id)))
-        setTotal(t => t - selectedIds.size)
-        setSelectedIds(new Set())
+        setDeleteError('')
+        try {
+          await Promise.all([...selectedIds].map(id => deleteDocument(id)))
+          const count = selectedIds.size
+          setDocuments(docs => docs.filter(d => !selectedIds.has(d.id)))
+          setTotal(t => t - count)
+          setSelectedIds(new Set())
+          toast.success(`${count} document${count !== 1 ? 's' : ''} deleted`)
+        } catch (err) {
+          console.error('[LexDraft] Bulk delete failed:', err)
+          toast.error('Some documents could not be deleted. Please try again.')
+          setDeleteError('Some documents could not be deleted. Please try again.')
+        }
       },
     })
   }
@@ -143,6 +172,7 @@ export default function DocumentsPage() {
         setDocuments(docs => docs.filter(d => d.id !== id))
         setTotal(t => t - 1)
         setPreviewDoc(null)
+        toast.success('Document deleted')
       },
     })
   }
@@ -151,11 +181,13 @@ export default function DocumentsPage() {
     setVersionsDoc(doc)
     setVersions([])
     setPreviewVersion(null)
+    setVersionsError('')
     setLoadingVersions(true)
     try {
       const v = await getDocumentVersions(doc.id)
       setVersions(v)
     } catch {
+      setVersionsError('Failed to load version history.')
       setVersions([])
     } finally {
       setLoadingVersions(false)
@@ -240,10 +272,24 @@ export default function DocumentsPage() {
         )}
       </div>
 
+      {/* Error banners */}
+      {(fetchError || deleteError) && (
+        <div className="mb-4 px-4 py-3 border border-red-500/30 bg-red-500/5 flex items-center justify-between">
+          <p className="text-[11px] text-red-400" style={{ fontFamily: 'DM Mono, monospace' }}>
+            {fetchError || deleteError}
+          </p>
+          <button onClick={() => { setFetchError(''); setDeleteError(''); if (fetchError) fetchPage(1, true) }}
+            className="text-[10px] text-gold hover:text-gold/80 ml-4" style={{ fontFamily: 'DM Mono, monospace' }}>
+            {fetchError ? 'RETRY' : 'DISMISS'}
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       {loading ? (
-        <div className="flex items-center justify-center py-16">
+        <div className="flex flex-col items-center justify-center py-16 gap-3">
           <div className="w-6 h-6 border border-[#C9A84C] border-t-transparent animate-spin" />
+          <p className="text-[11px] text-[rgba(250,247,240,0.4)]" style={{ fontFamily: 'DM Mono, monospace' }}>LOADING DOCUMENTS…</p>
         </div>
       ) : filtered.length === 0 ? (
         <div className="py-16 text-center border border-[rgba(201,168,76,0.1)]">
@@ -395,6 +441,15 @@ export default function DocumentsPage() {
                     <div className="flex items-center justify-center py-16">
                       <div className="w-5 h-5 border border-gold border-t-transparent animate-spin" />
                     </div>
+                  ) : versionsError ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-center">
+                      <History size={28} className="text-red-400/40 mb-3" />
+                      <p className="text-[13px] text-red-400" style={{ fontFamily: 'DM Mono, monospace' }}>{versionsError}</p>
+                      <button onClick={() => versionsDoc && openVersionHistory(versionsDoc)}
+                        className="text-[11px] text-gold hover:text-gold/80 mt-2" style={{ fontFamily: 'DM Mono, monospace' }}>
+                        RETRY
+                      </button>
+                    </div>
                   ) : versions.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 text-center">
                       <History size={28} className="text-muted/30 mb-3" />
@@ -474,11 +529,13 @@ export default function DocumentsPage() {
                 </div>
               </div>
               <div className="flex-1 overflow-hidden">
-                <DocumentPreview
-                  content={previewDoc.content || ''}
-                  isGenerating={false}
-                  title={previewDoc.title}
-                  className="h-full"
+                <DocumentEditor
+                  documentId={previewDoc.id}
+                  initialContent={previewDoc.content || ''}
+                  onSaved={() => {
+                    // Refresh document list after save
+                    fetchPage(1, true)
+                  }}
                 />
               </div>
             </motion.div>

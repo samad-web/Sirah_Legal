@@ -1,10 +1,20 @@
 import { Router } from 'express'
+import rateLimit from 'express-rate-limit'
 import { z } from 'zod'
 import { supabase } from '../lib/supabase.js'
 import { requireAuth, requireLawyer } from '../middleware/auth.js'
 import type { AuthRequest } from '../middleware/auth.js'
 
 export const intakeFormsRouter = Router()
+
+// Tighter rate limit for unauthenticated public form submissions
+const intakeSubmitLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 10,
+  message: { error: 'Too many form submissions. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
 
 const formSchema = z.object({
   title: z.string().min(1).max(500),
@@ -102,7 +112,7 @@ intakeFormsRouter.get('/:id/public', async (req, res, next) => {
 })
 
 // POST /api/intake-forms/:id/submit — public (no auth), submits response
-intakeFormsRouter.post('/:id/submit', async (req, res, next) => {
+intakeFormsRouter.post('/:id/submit', intakeSubmitLimiter, async (req, res, next) => {
   try {
     const { id } = req.params
     const body = submissionSchema.parse(req.body)

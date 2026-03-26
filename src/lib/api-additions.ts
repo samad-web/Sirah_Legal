@@ -7,6 +7,7 @@ import type {
   DocumentVersion, CaseStatusHistory, AuditLog,
   IntakeForm, IntakeFormField, IntakeSubmission,
   CaseTimelineEvent,
+  ClientNotification, ClientNote, ClientFeedback, DocumentAcknowledgment,
 } from './supabase'
 
 const BASE = '/api'
@@ -219,3 +220,155 @@ export async function searchECourts(params: {
 export async function sendUpcomingReminders(): Promise<{ sent: number; errors?: string[] }> {
   return apiFetch<{ sent: number; errors?: string[] }>('/reminders/send-upcoming', { method: 'POST', body: '{}' })
 }
+
+// ─── Notifications (Enhancement 1) ───────────────────────────────────────────
+
+export async function getClientNotifications(): Promise<ClientNotification[]> {
+  return apiFetch<ClientNotification[]>('/client/notifications')
+}
+
+export async function markNotificationRead(id: string): Promise<void> {
+  await apiFetch<{ success: boolean }>(`/client/notifications/${id}/read`, { method: 'PATCH', body: '{}' })
+}
+
+export async function markAllNotificationsRead(): Promise<void> {
+  await apiFetch<{ success: boolean }>('/client/notifications/read-all', { method: 'PATCH', body: '{}' })
+}
+
+// ─── Client Notes (Enhancement 7) ────────────────────────────────────────────
+
+export async function getClientNotes(caseId: string): Promise<ClientNote[]> {
+  return apiFetch<ClientNote[]>(`/client/notes?caseId=${caseId}`)
+}
+
+export async function createClientNote(caseId: string, content: string, shareWithLawyer = false): Promise<ClientNote> {
+  return apiFetch<ClientNote>('/client/notes', {
+    method: 'POST',
+    body: JSON.stringify({ case_id: caseId, content, share_with_lawyer: shareWithLawyer }),
+  })
+}
+
+export async function updateClientNote(id: string, content: string, shareWithLawyer?: boolean): Promise<ClientNote> {
+  return apiFetch<ClientNote>(`/client/notes/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ content, share_with_lawyer: shareWithLawyer }),
+  })
+}
+
+export async function deleteClientNote(id: string): Promise<void> {
+  await apiFetch<{ success: boolean }>(`/client/notes/${id}`, { method: 'DELETE' })
+}
+
+// ─── Feedback (Enhancement 8) ─────────────────────────────────────────────────
+
+export async function submitClientFeedback(data: { case_id?: string; rating: number; comment?: string }): Promise<ClientFeedback> {
+  return apiFetch<ClientFeedback>('/client/feedback', { method: 'POST', body: JSON.stringify(data) })
+}
+
+// ─── Document Acknowledgment (Enhancement 6A) ─────────────────────────────────
+
+export async function acknowledgeDocument(documentId: string): Promise<DocumentAcknowledgment> {
+  return apiFetch<DocumentAcknowledgment>('/client/acknowledge', {
+    method: 'POST',
+    body: JSON.stringify({ document_id: documentId }),
+  })
+}
+
+export async function getAcknowledgedDocuments(): Promise<DocumentAcknowledgment[]> {
+  return apiFetch<DocumentAcknowledgment[]>('/client/acknowledge')
+}
+
+// ─── AI Case Summary (Enhancement 11) ────────────────────────────────────────
+
+export async function getAICaseSummary(caseId: string): Promise<{ summary: string }> {
+  return apiFetch<{ summary: string }>(`/client/cases/${caseId}/summary`, { method: 'POST', body: '{}' })
+}
+
+// ─── Escalation / Priority (Enhancement 15) ──────────────────────────────────
+
+export async function markRequestUrgent(id: string, urgencyNote?: string): Promise<DocumentRequest> {
+  return apiFetch<DocumentRequest>(`/client/document-requests/${id}/urgent`, {
+    method: 'PATCH',
+    body: JSON.stringify({ urgency_note: urgencyNote }),
+  })
+}
+
+// ─── Similar Documents (for draft pages) ────────────────────────────────────
+
+export interface SimilarDocument {
+  id: string
+  title: string
+  type: string
+  language: string
+  created_at: string
+  status: string
+}
+
+export async function getSimilarDocuments(
+  type: string,
+  opts: { caseId?: string; limit?: number } = {},
+): Promise<{ documents: SimilarDocument[]; source: 'case' | 'recent' }> {
+  const params = new URLSearchParams({ type })
+  if (opts.caseId) params.set('caseId', opts.caseId)
+  if (opts.limit) params.set('limit', String(opts.limit))
+  return apiFetch(`/documents/similar?${params}`)
+}
+
+// ─── Client File Uploads (Phase 1 — Feature 3) ─────────────────────────────
+
+export interface ClientUpload {
+  id: string
+  case_id: string
+  client_id: string
+  request_id: string | null
+  file_name: string
+  file_size: number
+  mime_type: string
+  storage_path: string
+  uploaded_at: string
+  client?: { id: string; full_name: string | null }
+}
+
+export async function getUploadsForCase(caseId: string): Promise<ClientUpload[]> {
+  return apiFetch<ClientUpload[]>(`/uploads/case/${caseId}`)
+}
+
+export async function getUploadSignedUrl(uploadId: string): Promise<{ url: string; expires_in: number }> {
+  return apiFetch<{ url: string; expires_in: number }>(`/uploads/${uploadId}/url`)
+}
+
+export async function deleteUpload(uploadId: string): Promise<void> {
+  await apiFetch<{ deleted: boolean }>(`/uploads/${uploadId}`, { method: 'DELETE' })
+}
+
+// ─── Advocate Notifications (Phase 1 — Feature 2) ──────────────────────────
+
+export interface AppNotification {
+  id: string
+  type: string
+  title: string
+  body: string
+  link: string | null
+  read: boolean
+  created_at: string
+}
+
+export async function getNotifications(limit = 20, offset = 0): Promise<{
+  notifications: AppNotification[]
+  total: number
+  unread_count: number
+}> {
+  return apiFetch(`/notifications?limit=${limit}&offset=${offset}`)
+}
+
+export async function markNotificationReadById(id: string): Promise<void> {
+  await apiFetch<{ updated: boolean }>(`/notifications/${id}/read`, { method: 'PATCH' })
+}
+
+export async function markAllNotificationsReadGlobal(): Promise<void> {
+  await apiFetch<{ updated: boolean }>('/notifications/read-all', { method: 'PATCH' })
+}
+
+// ─── Export re-used types ────────────────────────────────────────────────────
+
+export type { ClientNotification, ClientNote, ClientFeedback, DocumentAcknowledgment }

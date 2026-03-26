@@ -20,6 +20,7 @@ export default function MessagesPage() {
   const [sending, setSending] = useState(false)
   const [unreadMap, setUnreadMap] = useState<Record<string, number>>({})
   const [showSidebar, setShowSidebar] = useState(true)
+  const [sendError, setSendError] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const fetchCases = useCallback(async () => {
@@ -63,6 +64,7 @@ export default function MessagesPage() {
     if (!selectedCase || !input.trim() || sending) return
     const content = input.trim()
     setInput('')
+    setSendError('')
     setSending(true)
     try {
       const msg = await sendMessage(selectedCase.id, content)
@@ -70,6 +72,7 @@ export default function MessagesPage() {
     } catch (err) {
       console.error('[LexDraft] Messages: failed to send:', err)
       setInput(content)
+      setSendError('Failed to send. Please try again.')
     } finally {
       setSending(false)
     }
@@ -105,9 +108,12 @@ export default function MessagesPage() {
               <div className="w-5 h-5 border border-gold border-t-transparent animate-spin" />
             </div>
           ) : cases.length === 0 ? (
-            <div className="p-6 text-center">
-              <Briefcase size={20} className="text-muted/30 mx-auto mb-2" />
-              <p className="text-[12px] text-muted" style={{ fontFamily: 'DM Mono, monospace' }}>No cases yet.</p>
+            <div className="p-6 text-center space-y-3">
+              <Briefcase size={24} className="text-muted/20 mx-auto" />
+              <p className="text-[13px] text-muted" style={{ fontFamily: 'Cormorant Garamond, serif' }}>No cases yet</p>
+              <p className="text-[10px] text-muted/50" style={{ fontFamily: 'DM Mono, monospace' }}>
+                Create a case in Manage Clients to start messaging your clients.
+              </p>
             </div>
           ) : (
             cases.map(c => (
@@ -187,35 +193,50 @@ export default function MessagesPage() {
                   </p>
                 </div>
               ) : (
-                messages.map(msg => {
+                messages.map((msg, idx) => {
                   const isMe = msg.sender_id === user?.id
+                  const msgDate = new Date(msg.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                  const prevDate = idx > 0 ? new Date(messages[idx - 1].created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : null
+                  const showDateSep = idx === 0 || msgDate !== prevDate
+                  const isToday = msgDate === new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+
                   return (
-                    <motion.div
-                      key={msg.id}
-                      initial={{ opacity: 0, y: 4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className={cn('flex', isMe ? 'justify-end' : 'justify-start')}
-                    >
-                      <div className={cn(
-                        'max-w-[70%] px-4 py-2.5 border',
-                        isMe
-                          ? 'bg-forest border-gold/30 text-parchment'
-                          : 'bg-surface-2 border-border text-foreground',
-                      )}>
-                        {!isMe && msg.sender && (
-                          <p className="text-[10px] text-gold mb-1" style={{ fontFamily: 'DM Mono, monospace' }}>
-                            {msg.sender.full_name ?? msg.sender.role}
+                    <div key={msg.id}>
+                      {showDateSep && (
+                        <div className="flex items-center gap-3 my-4">
+                          <div className="flex-1 h-px bg-border/30" />
+                          <span className="text-[9px] text-muted/60 shrink-0" style={{ fontFamily: 'DM Mono, monospace' }}>
+                            {isToday ? 'TODAY' : msgDate.toUpperCase()}
+                          </span>
+                          <div className="flex-1 h-px bg-border/30" />
+                        </div>
+                      )}
+                      <motion.div
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className={cn('flex', isMe ? 'justify-end' : 'justify-start')}
+                      >
+                        <div className={cn(
+                          'max-w-[70%] px-4 py-2.5 border',
+                          isMe
+                            ? 'bg-forest border-gold/30 text-parchment'
+                            : 'bg-surface-2 border-border text-foreground',
+                        )}>
+                          {!isMe && msg.sender && (
+                            <p className="text-[10px] text-gold mb-1" style={{ fontFamily: 'DM Mono, monospace' }}>
+                              {msg.sender.full_name ?? msg.sender.role}
+                            </p>
+                          )}
+                          <p className="text-[13px] whitespace-pre-wrap" style={{ fontFamily: 'Lora, serif' }}>
+                            {msg.content}
                           </p>
-                        )}
-                        <p className="text-[13px] whitespace-pre-wrap" style={{ fontFamily: 'Lora, serif' }}>
-                          {msg.content}
-                        </p>
-                        <p className="text-[9px] text-muted mt-1 text-right" style={{ fontFamily: 'DM Mono, monospace' }}>
-                          {new Date(msg.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                          {msg.read_at && isMe && ' · Read'}
-                        </p>
-                      </div>
-                    </motion.div>
+                          <p className="text-[9px] text-muted mt-1 text-right" style={{ fontFamily: 'DM Mono, monospace' }}>
+                            {new Date(msg.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                            {msg.read_at && isMe && ' · Read'}
+                          </p>
+                        </div>
+                      </motion.div>
+                    </div>
                   )
                 })
               )}
@@ -224,12 +245,17 @@ export default function MessagesPage() {
 
             {/* Input */}
             <div className="p-4 border-t border-border/60 bg-surface shrink-0">
+              {sendError && (
+                <p className="text-[10px] text-red-400 mb-2" style={{ fontFamily: 'DM Mono, monospace' }}>
+                  ⚠ {sendError}
+                </p>
+              )}
               <div className="flex items-end gap-3">
                 <textarea
                   value={input}
-                  onChange={e => setInput(e.target.value)}
+                  onChange={e => { setInput(e.target.value); if (sendError) setSendError('') }}
                   onKeyDown={handleKeyDown}
-                  placeholder="Type a message... (Enter to send, Shift+Enter for new line)"
+                  placeholder="Type a message… (Enter to send, Shift+Enter for new line)"
                   rows={2}
                   className="flex-1 bg-surface-2 border border-border px-3 py-2 text-[13px] text-foreground resize-none focus:outline-none focus:border-gold/50 transition-colors placeholder:text-muted/40"
                   style={{ fontFamily: 'Lora, serif' }}

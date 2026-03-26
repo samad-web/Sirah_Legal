@@ -29,6 +29,71 @@ export const documentsRouter = Router()
 
 documentsRouter.use(requireAuth)
 
+// GET /api/documents/similar?type=notice&limit=5&caseId=...
+// Returns recent documents of the same type, optionally filtered by case
+documentsRouter.get('/similar', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = (req as AuthRequest).userId
+    const docType = req.query.type as string | undefined
+    const caseId = req.query.caseId as string | undefined
+    const limit = Math.min(Number(req.query.limit ?? 5), 10)
+
+    if (!docType) {
+      res.status(400).json({ error: 'type query parameter is required' })
+      return
+    }
+
+    // If caseId is provided, get documents linked to that case
+    if (caseId) {
+      const { data: caseDocIds } = await supabase
+        .from('case_documents')
+        .select('document_id')
+        .eq('case_id', caseId)
+
+      if (caseDocIds && caseDocIds.length > 0) {
+        const ids = caseDocIds.map(r => r.document_id)
+        const { data, error } = await supabase
+          .from('documents')
+          .select('id, title, type, language, created_at, status')
+          .eq('user_id', userId)
+          .eq('type', docType)
+          .in('id', ids)
+          .order('created_at', { ascending: false })
+          .limit(limit)
+
+        if (error) {
+          console.error('[documents] GET /similar case-linked error:', error.message)
+          res.status(500).json({ error: 'Failed to fetch similar documents' })
+          return
+        }
+
+        res.json({ documents: data ?? [], source: 'case' })
+        return
+      }
+    }
+
+    // Fallback: get recent documents of the same type
+    const { data, error } = await supabase
+      .from('documents')
+      .select('id, title, type, language, created_at, status')
+      .eq('user_id', userId)
+      .eq('type', docType)
+      .order('created_at', { ascending: false })
+      .limit(limit)
+
+    if (error) {
+      console.error('[documents] GET /similar error:', error.message)
+      res.status(500).json({ error: 'Failed to fetch similar documents' })
+      return
+    }
+
+    res.json({ documents: data ?? [], source: 'recent' })
+  } catch (err) {
+    console.error('[documents] GET /similar unexpected error:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 // GET /api/documents?page=1&limit=20
 documentsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
@@ -50,19 +115,25 @@ documentsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
       .range(offset, offset + limit - 1)
 
     if (search) {
-      query = query.textSearch('search_vector', search, { type: 'websearch' })
+      // Sanitize FTS operators to prevent search injection — strip special postgres tsquery chars
+      const safeSearch = search.replace(/[&|!():*<>\\]/g, ' ').trim()
+      if (safeSearch) {
+        query = query.textSearch('search_vector', safeSearch, { type: 'websearch' })
+      }
     }
 
     const { data, error, count } = await query
 
     if (error) {
-      res.status(500).json({ error: error.message })
+      console.error('[documents] GET / error:', error.message)
+      res.status(500).json({ error: 'Failed to fetch documents' })
       return
     }
 
     res.json({ data: data ?? [], total: count ?? 0, page, limit })
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : 'Unexpected error in documents route' })
+    console.error('[documents] GET / unexpected error:', err)
+    res.status(500).json({ error: 'Internal server error' })
   }
 })
 
@@ -83,7 +154,8 @@ documentsRouter.post('/', enforceQuota, async (req: Request, res: Response): Pro
     .single()
 
   if (error) {
-    res.status(500).json({ error: error.message })
+    console.error('[documents] POST / error:', error.message)
+    res.status(500).json({ error: 'Failed to create document' })
     return
   }
 
@@ -118,7 +190,8 @@ documentsRouter.patch('/:id', async (req: Request, res: Response): Promise<void>
     .single()
 
   if (error) {
-    res.status(500).json({ error: error.message })
+    console.error('[documents] PATCH error:', error.message)
+    res.status(500).json({ error: 'Failed to update document' })
     return
   }
 
@@ -158,7 +231,11 @@ documentsRouter.get('/:id/versions', async (req: Request, res: Response): Promis
     .eq('document_id', id)
     .order('version_number', { ascending: false })
 
-  if (error) { res.status(500).json({ error: error.message }); return }
+  if (error) {
+    console.error('[documents] GET versions error:', error.message)
+    res.status(500).json({ error: 'Failed to fetch versions' })
+    return
+  }
   res.json(data ?? [])
 })
 
@@ -193,7 +270,8 @@ documentsRouter.delete('/:id', async (req: Request, res: Response): Promise<void
     .eq('user_id', userId)
 
   if (error) {
-    res.status(500).json({ error: error.message })
+    console.error('[documents] DELETE error:', error.message)
+    res.status(500).json({ error: 'Failed to delete document' })
     return
   }
 

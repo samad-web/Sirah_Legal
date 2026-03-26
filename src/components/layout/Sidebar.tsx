@@ -24,6 +24,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { cn } from '@/lib/utils'
+import { NotificationBell } from '@/components/NotificationBell'
 
 interface NavItem {
   to: string
@@ -129,6 +130,25 @@ export function Sidebar() {
 
       {/* Bottom */}
       <div className="border-t border-border/70 py-2 px-2 space-y-1">
+        {/* Notification Bell */}
+        <div className="flex items-center h-9 px-[10px]">
+          <NotificationBell />
+          <AnimatePresence>
+            {expanded && (
+              <motion.span
+                initial={{ opacity: 0, x: -6 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -6 }}
+                transition={{ duration: 0.12 }}
+                className="ml-3 text-[12px] text-muted whitespace-nowrap"
+                style={{ fontFamily: 'DM Mono, monospace' }}
+              >
+                Notifications
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </div>
+
         <NavLink
           to="/settings"
           className={({ isActive }) =>
@@ -161,6 +181,7 @@ export function Sidebar() {
         {/* Theme toggle */}
         <button
           onClick={toggleTheme}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           className="w-full flex items-center h-9 px-[10px] text-muted hover:text-foreground hover:bg-surface-2 transition-all duration-150 border border-transparent"
         >
           {theme === 'dark'

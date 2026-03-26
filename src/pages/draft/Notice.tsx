@@ -3,16 +3,20 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Feather, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { generateDocument, type Language } from '@/lib/generate'
-import { saveDocument, incrementDocumentCount } from '@/lib/api'
+import { saveDocument, incrementDocumentCount, linkDocumentToCase } from '@/lib/api'
 import { exportToPdf } from '@/lib/pdf-export'
 import { exportToDocx } from '@/lib/docx-export'
 import { DocumentPreview } from '@/components/ui/DocumentPreview'
+import { DocumentEditor } from '@/components/documents/DocumentEditor'
+import { useToast } from '@/contexts/ToastContext'
+import { CaseAndSimilarDocs } from '@/components/draft/CaseAndSimilarDocs'
+import { ExportDisclaimer, useExportDisclaimer } from '@/components/ui/ExportDisclaimer'
 import {
   FormField, Input, Textarea, Select,
   ProgressSteps, SelectionCard,
 } from '@/components/ui/FormFields'
 import { Button } from '@/components/ui/Button'
-import { INDIAN_STATES, RELEVANT_ACTS } from '@/lib/utils'
+import { INDIAN_STATES, RELEVANT_ACTS, textToHtml } from '@/lib/utils'
 import { DateConfirmModal } from '@/components/ui/DateConfirmModal'
 
 type NoticeType =
@@ -84,6 +88,7 @@ Draft a complete, formal legal notice. Include all standard sections: advocate h
 
 export default function DraftNoticePage() {
   const { profile, user } = useAuth()
+  const toast = useToast()
   const [step, setStep] = useState(0)
   const [mobilePanel, setMobilePanel] = useState<'form' | 'preview'>('form')
   const [form, setForm] = useState<FormData>({
@@ -108,6 +113,9 @@ export default function DraftNoticePage() {
   const [documentTitle, setDocumentTitle] = useState('')
   const [generateError, setGenerateError] = useState('')
   const [showDateModal, setShowDateModal] = useState(false)
+  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null)
+  const [savedDocIds, setSavedDocIds] = useState<Record<string, string>>({})
+  const disclaimer = useExportDisclaimer()
 
   const setField = <K extends keyof FormData>(key: K, value: FormData[K]) => {
     setForm(prev => ({ ...prev, [key]: value }))
@@ -164,17 +172,30 @@ export default function DraftNoticePage() {
               analysis: null,
               status: 'draft',
             })
-              .then(() => {
+              .then(async (savedDoc) => {
                 incrementDocumentCount(user.id)
                 window.dispatchEvent(new CustomEvent('lexdraft:document-saved'))
+                if (savedDoc?.id) {
+                  setSavedDocIds(prev => ({ ...prev, [lang]: savedDoc.id }))
+                  if (selectedCaseId) {
+                    await linkDocumentToCase(selectedCaseId, savedDoc.id).catch(() => {})
+                  }
+                }
+                toast.success('Document saved — you can now edit it', {
+                  label: 'View in Documents →',
+                  onClick: () => window.location.assign('/documents'),
+                })
               })
-              .catch(err => console.error('[LexDraft] Failed to save notice to DB:', err))
+              .catch(err => {
+                console.error('[LexDraft] Failed to save notice to DB:', err)
+                toast.error('Failed to save document to library')
+              })
           }
         }
       } catch (err) {
         setGenerateError(err instanceof Error ? err.message : `Generation failed for ${lang}`)
         console.error(err)
-        break
+        // Continue to next language instead of breaking — partial results are better than none
       }
     }
     setIsGenerating(false)
@@ -251,6 +272,15 @@ export default function DraftNoticePage() {
                     title={type.label}
                   />
                 ))}
+
+                {/* Case selector + similar documents */}
+                <div className="mt-6">
+                  <CaseAndSimilarDocs
+                    documentType="notice"
+                    onCaseSelect={(caseId) => setSelectedCaseId(caseId)}
+                    onDocumentClick={(docId) => window.open(`/documents?preview=${docId}`, '_blank')}
+                  />
+                </div>
               </motion.div>
             )}
 
@@ -372,11 +402,12 @@ export default function DraftNoticePage() {
                   />
                 </FormField>
 
-                <FormField label="Relevant Act">
-                  <Input
+                <FormField label="Relevant Act" hint="Select the primary act applicable to this notice">
+                  <Select
                     value={form.relevantAct}
                     onChange={(e) => setField('relevantAct', e.target.value)}
-                    placeholder="e.g. Negotiable Instruments Act, 1881"
+                    placeholder="Select relevant act..."
+                    options={(RELEVANT_ACTS[form.noticeType] ?? []).map(act => ({ value: act, label: act }))}
                   />
                 </FormField>
               </motion.div>
@@ -527,16 +558,44 @@ export default function DraftNoticePage() {
             ))}
           </div>
         )}
-        <DocumentPreview
-          content={documents[activeDocLang] ?? ''}
-          isGenerating={isGenerating}
-          title={documentTitle || 'Legal Notice'}
-          onExportPdf={() => exportToPdf(documents[activeDocLang] ?? '', documentTitle, profile, activeDocLang)}
-          onExportDocx={() => exportToDocx(documents[activeDocLang] ?? '', documentTitle, profile, activeDocLang)}
-          className="flex-1"
-        />
+        {/* Show editor if doc is saved and not currently generating; otherwise read-only preview */}
+        {savedDocIds[activeDocLang] && !isGenerating ? (
+          <div className="flex-1 overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-2 border-b border-border/30 bg-[#0a0a0a]">
+              <button
+                onClick={() => disclaimer.requestExport('PDF', () => exportToPdf(documents[activeDocLang] ?? '', documentTitle, profile, activeDocLang))}
+                className="text-[10px] text-muted hover:text-gold border border-border/40 px-2 py-1 transition-colors"
+                style={{ fontFamily: 'DM Mono, monospace' }}
+              >
+                PDF
+              </button>
+              <button
+                onClick={() => disclaimer.requestExport('DOCX', () => exportToDocx(documents[activeDocLang] ?? '', documentTitle, profile, activeDocLang))}
+                className="text-[10px] text-muted hover:text-gold border border-border/40 px-2 py-1 transition-colors"
+                style={{ fontFamily: 'DM Mono, monospace' }}
+              >
+                DOCX
+              </button>
+            </div>
+            <DocumentEditor
+              documentId={savedDocIds[activeDocLang]}
+              initialContent={textToHtml(documents[activeDocLang] ?? '')}
+            />
+          </div>
+        ) : (
+          <DocumentPreview
+            content={documents[activeDocLang] ?? ''}
+            isGenerating={isGenerating}
+            title={documentTitle || 'Legal Notice'}
+            onExportPdf={() => disclaimer.requestExport('PDF', () => exportToPdf(documents[activeDocLang] ?? '', documentTitle, profile, activeDocLang))}
+            onExportDocx={() => disclaimer.requestExport('DOCX', () => exportToDocx(documents[activeDocLang] ?? '', documentTitle, profile, activeDocLang))}
+            className="flex-1"
+          />
+        )}
       </div>
       </div>{/* end flex-1 row */}
+
+      <ExportDisclaimer open={disclaimer.open} format={disclaimer.format} onConfirm={disclaimer.confirm} onCancel={disclaimer.cancel} />
     </div>
   )
 }

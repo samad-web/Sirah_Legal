@@ -39,15 +39,18 @@ const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
 export default function CalendarPage() {
   const [events, setEvents] = useState<TimelineEventWithCase[]>([])
   const [loading, setLoading] = useState(true)
+  const [fetchError, setFetchError] = useState('')
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
 
   const fetchEvents = useCallback(async () => {
+    setFetchError('')
     try {
       const data = await getAllTimeline()
       setEvents(data)
     } catch (err) {
       console.error('[LexDraft] Calendar: failed to load events:', err)
+      setFetchError('Failed to load calendar events.')
     } finally {
       setLoading(false)
     }
@@ -109,8 +112,16 @@ export default function CalendarPage() {
       <div className="gold-line-solid mb-8" />
 
       {loading ? (
-        <div className="flex items-center justify-center py-16">
+        <div className="flex flex-col items-center justify-center py-16 gap-3">
           <div className="w-6 h-6 border border-gold border-t-transparent animate-spin" />
+          <p className="text-[11px] text-muted" style={{ fontFamily: 'DM Mono, monospace' }}>LOADING EVENTS…</p>
+        </div>
+      ) : fetchError ? (
+        <div className="flex flex-col items-center justify-center py-16 gap-3 border border-red-500/20">
+          <p className="text-[12px] text-red-400" style={{ fontFamily: 'DM Mono, monospace' }}>{fetchError}</p>
+          <button onClick={fetchEvents} className="text-[11px] text-gold hover:text-gold/80" style={{ fontFamily: 'DM Mono, monospace' }}>
+            RETRY
+          </button>
         </div>
       ) : (
         <div className="space-y-6">

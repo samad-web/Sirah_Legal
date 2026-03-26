@@ -106,6 +106,8 @@ export interface DocumentRequest {
   status: 'pending' | 'fulfilled' | 'cancelled'
   created_at: string
   fulfilled_at: string | null
+  is_urgent: boolean
+  urgency_note: string | null
   client?: { id: string; full_name: string | null }
   case?: { id: string; title: string }
 }
@@ -171,4 +173,41 @@ export interface IntakeSubmission {
   respondent_email: string | null
   data: Record<string, unknown>
   submitted_at: string
+}
+
+export interface ClientNotification {
+  id: string
+  user_id: string
+  type: 'message' | 'document' | 'request' | 'reminder' | 'case-update'
+  title: string
+  body: string | null
+  ref_id: string | null
+  read_at: string | null
+  created_at: string
+}
+
+export interface ClientNote {
+  id: string
+  client_id: string
+  case_id: string
+  content: string
+  share_with_lawyer: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ClientFeedback {
+  id: string
+  client_id: string
+  case_id: string | null
+  rating: number
+  comment: string | null
+  created_at: string
+}
+
+export interface DocumentAcknowledgment {
+  id: string
+  user_id: string
+  document_id: string
+  acknowledged_at: string
 }

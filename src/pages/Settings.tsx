@@ -72,10 +72,12 @@ export default function SettingsPage() {
   const [submissionsFormId, setSubmissionsFormId] = useState<string | null>(null)
   const [submissions, setSubmissions] = useState<IntakeSubmission[]>([])
   const [loadingSubmissions, setLoadingSubmissions] = useState(false)
+  const [formError, setFormError] = useState('')
 
   const loadIntakeForms = useCallback(async () => {
     setLoadingForms(true)
-    try { setIntakeForms(await getIntakeForms()) } catch { /* ignore */ } finally { setLoadingForms(false) }
+    setFormError('')
+    try { setIntakeForms(await getIntakeForms()) } catch { setFormError('Failed to load forms.') } finally { setLoadingForms(false) }
   }, [])
 
   useEffect(() => { if (formsExpanded) loadIntakeForms() }, [formsExpanded, loadIntakeForms])
@@ -102,16 +104,21 @@ export default function SettingsPage() {
         { id: crypto.randomUUID(), label: 'Phone Number', type: 'tel', required: true },
       ])
       setFormCreateOpen(false)
-    } catch { /* ignore */ } finally { setCreatingForm(false) }
+    } catch { setFormError('Failed to create form. Please try again.') } finally { setCreatingForm(false) }
   }
 
   const handleDeleteForm = (id: string) => setConfirmDeleteFormId(id)
 
   const doDeleteForm = async () => {
     if (!confirmDeleteFormId) return
-    await deleteIntakeForm(confirmDeleteFormId)
-    setIntakeForms(prev => prev.filter(f => f.id !== confirmDeleteFormId))
-    if (submissionsFormId === confirmDeleteFormId) setSubmissionsFormId(null)
+    setFormError('')
+    try {
+      await deleteIntakeForm(confirmDeleteFormId)
+      setIntakeForms(prev => prev.filter(f => f.id !== confirmDeleteFormId))
+      if (submissionsFormId === confirmDeleteFormId) setSubmissionsFormId(null)
+    } catch {
+      setFormError('Failed to delete form.')
+    }
     setConfirmDeleteFormId(null)
   }
 
@@ -125,7 +132,7 @@ export default function SettingsPage() {
     if (submissionsFormId === formId) { setSubmissionsFormId(null); return }
     setSubmissionsFormId(formId)
     setLoadingSubmissions(true)
-    try { setSubmissions(await getIntakeFormSubmissions(formId)) } catch { setSubmissions([]) } finally { setLoadingSubmissions(false) }
+    try { setSubmissions(await getIntakeFormSubmissions(formId)) } catch { setFormError('Failed to load submissions.'); setSubmissions([]) } finally { setLoadingSubmissions(false) }
   }
 
   const [form, setForm] = useState({
@@ -258,7 +265,12 @@ export default function SettingsPage() {
   function openPreview(slot: 'letterhead' | 'signature') {
     const url = slot === 'letterhead' ? form.letterhead_url : form.signature_url
     if (!url) return
-    if (url.toLowerCase().includes('.pdf')) { window.open(url, '_blank'); return }
+    // Validate URL is safe (only allow https: and http: protocols)
+    try {
+      const parsed = new URL(url, window.location.origin)
+      if (!['http:', 'https:'].includes(parsed.protocol)) return
+      if (parsed.pathname.toLowerCase().endsWith('.pdf')) { window.open(parsed.href, '_blank', 'noopener,noreferrer'); return }
+    } catch { return }
     setPreviewSlot(slot)
     setPreviewUrl(url)
   }
@@ -599,16 +611,19 @@ export default function SettingsPage() {
               </div>
               {profile?.plan === 'free' && (
                 <div className="space-y-2">
-                  <Button variant="primary" size="sm" className="w-full justify-center">
+                  <Button variant="primary" size="sm" className="w-full justify-center" title="Upgrade plans coming soon"
+                    onClick={() => alert('Upgrade plans coming soon. Contact support for early access.')}>
                     UPGRADE TO SOLO — ₹999/MO
                   </Button>
-                  <Button variant="outline" size="sm" className="w-full justify-center">
+                  <Button variant="outline" size="sm" className="w-full justify-center" title="Upgrade plans coming soon"
+                    onClick={() => alert('Upgrade plans coming soon. Contact support for early access.')}>
                     UPGRADE TO PREMIUM — ₹2,499/MO
                   </Button>
                 </div>
               )}
               {profile?.plan === 'solo' && (
-                <Button variant="primary" size="sm" className="w-full justify-center">
+                <Button variant="primary" size="sm" className="w-full justify-center" title="Upgrade plans coming soon"
+                  onClick={() => alert('Upgrade plans coming soon. Contact support for early access.')}>
                   UPGRADE TO PREMIUM — ₹2,499/MO
                 </Button>
               )}
@@ -710,13 +725,19 @@ export default function SettingsPage() {
           className="flex items-center gap-2 mb-5 group w-full text-left"
         >
           <ClipboardList size={15} className="text-gold" />
-          <p className="text-[11px] tracking-widest text-gold/70 flex-1" style={{ fontFamily: 'DM Mono, monospace' }}>INTAKE FORMS</p>
+          <p className="text-[11px] tracking-widest text-gold/70 flex-1" style={{ fontFamily: 'DM Mono, monospace' }}>INTAKE FORMS{intakeForms.length > 0 ? ` (${intakeForms.length})` : ''}</p>
           {formsExpanded ? <ChevronUp size={13} className="text-muted" /> : <ChevronDown size={13} className="text-muted" />}
         </button>
 
         <AnimatePresence>
           {formsExpanded && (
             <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+
+              {formError && (
+                <div className="mb-4 px-3 py-2 border border-red-500/30 bg-red-500/5">
+                  <p className="text-[10px] text-red-400" style={{ fontFamily: 'DM Mono, monospace' }}>{formError}</p>
+                </div>
+              )}
 
               {/* Create form toggle */}
               <div className="mb-4">

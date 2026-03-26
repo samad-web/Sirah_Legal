@@ -11,6 +11,7 @@ import type { Document } from '@/lib/supabase'
 import { formatDate } from '@/lib/utils'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { exportToPdf } from '@/lib/pdf-export'
+import { useToast } from '@/contexts/ToastContext'
 
 const quickActions = [
   {
@@ -73,16 +74,23 @@ function getDaysUntilExpiry(expiryDate: string): number {
 
 export default function DashboardPage() {
   const { profile } = useAuth()
+  const toast = useToast()
   const [documents, setDocuments] = useState<Document[]>([])
   const [loadingDocs, setLoadingDocs] = useState(true)
   const { user } = useAuth()
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [fetchError, setFetchError] = useState('')
+  const [deleteError, setDeleteError] = useState('')
 
   const fetchDocuments = useCallback(() => {
     if (!user) return
+    setFetchError('')
     getUserDocuments(user.id, { limit: 10 })
       .then(r => setDocuments(r.data))
-      .catch(err => console.error('[LexDraft] Dashboard: failed to load documents:', err))
+      .catch(err => {
+        console.error('[LexDraft] Dashboard: failed to load documents:', err)
+        setFetchError('Failed to load documents.')
+      })
       .finally(() => setLoadingDocs(false))
   }, [user])
 
@@ -101,9 +109,18 @@ export default function DashboardPage() {
   const handleDelete = (id: string) => setConfirmDelete(id)
   const doDelete = async () => {
     if (!confirmDelete) return
-    await deleteDocument(confirmDelete)
-    setDocuments(docs => docs.filter(d => d.id !== confirmDelete))
-    setConfirmDelete(null)
+    setDeleteError('')
+    try {
+      await deleteDocument(confirmDelete)
+      setDocuments(docs => docs.filter(d => d.id !== confirmDelete))
+      setConfirmDelete(null)
+      toast.success('Document deleted')
+    } catch (err) {
+      console.error('[LexDraft] Dashboard: delete failed:', err)
+      toast.error('Failed to delete document')
+      setDeleteError('Failed to delete document.')
+      setConfirmDelete(null)
+    }
   }
 
   const recentDocs = documents
@@ -193,31 +210,95 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Profile completeness + Usage bar */}
+      {profile && (() => {
+        const fields = [
+          { label: 'Full name', done: !!profile.full_name },
+          { label: 'Bar Council No.', done: !!profile.bar_council_no },
+          { label: 'State Bar', done: !!profile.state_bar },
+          { label: 'Firm name', done: !!profile.firm_name },
+          { label: 'Office address', done: !!profile.office_address },
+          { label: 'Letterhead', done: !!profile.letterhead_url },
+          { label: 'Signature', done: !!profile.signature_url },
+        ]
+        const filled = fields.filter(f => f.done).length
+        const total = fields.length
+        const pct = Math.round((filled / total) * 100)
+        const isComplete = pct === 100
+
+        return !isComplete ? (
+          <div className="mb-6 bg-[#161616] border border-[rgba(201,168,76,0.15)] p-5">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[11px] text-[rgba(250,247,240,0.5)] tracking-widest" style={{ fontFamily: 'DM Mono, monospace' }}>
+                PROFILE COMPLETENESS
+              </p>
+              <p className="text-[11px] text-[#C9A84C]" style={{ fontFamily: 'DM Mono, monospace' }}>
+                {filled}/{total} ({pct}%)
+              </p>
+            </div>
+            <div className="h-1 bg-[rgba(250,247,240,0.05)] w-full mb-3">
+              <div
+                className="h-full transition-all duration-500"
+                style={{
+                  width: `${pct}%`,
+                  backgroundColor: pct < 50 ? '#f87171' : pct < 80 ? '#fbbf24' : '#86efac',
+                }}
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {fields.filter(f => !f.done).map(f => (
+                <Link
+                  key={f.label}
+                  to="/settings"
+                  className="text-[10px] text-[rgba(250,247,240,0.4)] border border-[rgba(250,247,240,0.1)] px-2 py-1 hover:border-[#C9A84C]/40 hover:text-[#C9A84C] transition-colors"
+                  style={{ fontFamily: 'DM Mono, monospace' }}
+                >
+                  + {f.label}
+                </Link>
+              ))}
+            </div>
+          </div>
+        ) : null
+      })()}
+
       {/* Usage bar */}
-      <div className="mb-10 bg-[#161616] border border-[rgba(201,168,76,0.15)] p-5">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-[11px] text-[rgba(250,247,240,0.5)] tracking-widest" style={{ fontFamily: 'DM Mono, monospace' }}>
-            DOCUMENTS THIS MONTH
-          </p>
-          <p className="text-[11px] text-[rgba(250,247,240,0.5)]" style={{ fontFamily: 'DM Mono, monospace' }}>
-            {profile?.documents_this_month || 0} / {profile?.plan === 'free' ? 5 : profile?.plan === 'solo' ? 50 : '∞'}
-            {(profile?.plan === 'premium' || profile?.plan === 'pro') && <span className="ml-2 text-[#C9A84C]">PREMIUM</span>}
-          </p>
-        </div>
-        <div className="h-1 bg-[rgba(250,247,240,0.05)] w-full">
-          <div
-            className="h-full bg-[#C9A84C] transition-all duration-500"
-            style={{
-              width: `${Math.min(100, ((profile?.documents_this_month || 0) / (profile?.plan === 'free' ? 5 : 50)) * 100)}%`
-            }}
-          />
-        </div>
-        {profile?.plan === 'free' && (
-          <p className="text-[10px] text-[rgba(250,247,240,0.3)] mt-2" style={{ fontFamily: 'DM Mono, monospace' }}>
-            Free plan · <Link to="/settings" className="text-[#C9A84C] hover:underline">Upgrade to Solo ₹999/mo →</Link>
-          </p>
-        )}
-      </div>
+      {(() => {
+        const used = profile?.documents_this_month || 0
+        const plan = profile?.plan ?? 'free'
+        const isUnlimited = ['pro', 'premium', 'firm'].includes(plan)
+        const limit = plan === 'free' ? 5 : plan === 'solo' ? 50 : Infinity
+        const pct = isUnlimited ? Math.min(100, (used / 100) * 100) : Math.min(100, (used / limit) * 100)
+
+        return (
+          <div className="mb-10 bg-[#161616] border border-[rgba(201,168,76,0.15)] p-5">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[11px] text-[rgba(250,247,240,0.5)] tracking-widest" style={{ fontFamily: 'DM Mono, monospace' }}>
+                DOCUMENTS GENERATED THIS MONTH
+              </p>
+              <p className="text-[11px] text-[rgba(250,247,240,0.5)]" style={{ fontFamily: 'DM Mono, monospace' }}>
+                {used}{isUnlimited ? '' : ` / ${limit}`}
+                {isUnlimited && <span className="ml-2 text-[#C9A84C]">{plan.toUpperCase()} — UNLIMITED</span>}
+              </p>
+            </div>
+            <div className="h-1 bg-[rgba(250,247,240,0.05)] w-full">
+              <div
+                className="h-full bg-[#C9A84C] transition-all duration-500"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            {plan === 'free' && (
+              <p className="text-[10px] text-[rgba(250,247,240,0.3)] mt-2" style={{ fontFamily: 'DM Mono, monospace' }}>
+                Free plan · <Link to="/settings" className="text-[#C9A84C] hover:underline">Upgrade to Solo ₹999/mo →</Link>
+              </p>
+            )}
+            {plan === 'solo' && used >= 40 && (
+              <p className="text-[10px] text-[rgba(250,247,240,0.3)] mt-2" style={{ fontFamily: 'DM Mono, monospace' }}>
+                Running low · <Link to="/settings" className="text-[#C9A84C] hover:underline">Upgrade to Firm for unlimited →</Link>
+              </p>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Expiring documents */}
       {(() => {
@@ -264,6 +345,17 @@ export default function DashboardPage() {
           </div>
         )
       })()}
+
+      {/* Error banner */}
+      {(fetchError || deleteError) && (
+        <div className="mb-6 px-4 py-3 border border-red-500/30 bg-red-500/5 flex items-center justify-between">
+          <p className="text-[11px] text-red-400" style={{ fontFamily: 'DM Mono, monospace' }}>{fetchError || deleteError}</p>
+          <button onClick={() => { setFetchError(''); setDeleteError(''); if (fetchError) fetchDocuments() }}
+            className="text-[10px] text-gold hover:text-gold/80 ml-4" style={{ fontFamily: 'DM Mono, monospace' }}>
+            {fetchError ? 'RETRY' : 'DISMISS'}
+          </button>
+        </div>
+      )}
 
       {/* Recent documents */}
       <div>

@@ -50,7 +50,8 @@ profilesRouter.get('/me', async (req: Request, res: Response): Promise<void> => 
     .single()
 
   if (error) {
-    res.status(404).json({ error: error.message })
+    console.error('[profiles] GET /me error:', error.message)
+    res.status(404).json({ error: 'Profile not found' })
     return
   }
 
@@ -74,7 +75,8 @@ profilesRouter.patch('/me', async (req: Request, res: Response): Promise<void> =
     .single()
 
   if (error) {
-    res.status(500).json({ error: error.message })
+    console.error('[profiles] PATCH /me error:', error.message)
+    res.status(500).json({ error: 'Failed to update profile' })
     return
   }
 
@@ -106,7 +108,11 @@ profilesRouter.post(
       .from(STORAGE_BUCKET)
       .upload(path, req.file.buffer, { contentType: req.file.mimetype, upsert: true })
 
-    if (error) { res.status(500).json({ error: error.message }); return }
+    if (error) {
+      console.error('[profiles] upload error:', error.message)
+      res.status(500).json({ error: 'File upload failed' })
+      return
+    }
 
     const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path)
     res.json({ url: `${data.publicUrl}?t=${Date.now()}` })

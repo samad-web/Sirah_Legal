@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { supabase } from '../lib/supabase.js'
 import { requireAuth, requireLawyer, requireClient } from '../middleware/auth.js'
 import type { AuthRequest } from '../middleware/auth.js'
+import { notifyClientDocumentRequest, notifyAdvocateRequestFulfilled } from '../services/notifications.js'
 
 export const documentRequestsRouter = Router()
 
@@ -59,6 +60,19 @@ documentRequestsRouter.post('/', requireLawyer, async (req, res, next) => {
 
     if (!caseRow) { res.status(404).json({ error: 'Case not found' }); return }
 
+    // Verify the client is actually assigned to this case
+    const { data: clientAssignment } = await supabase
+      .from('case_assignments')
+      .select('case_id')
+      .eq('case_id', body.case_id)
+      .eq('client_id', body.client_id)
+      .maybeSingle()
+
+    if (!clientAssignment) {
+      res.status(400).json({ error: 'Client is not assigned to this case' })
+      return
+    }
+
     const { data, error } = await supabase
       .from('document_requests')
       .insert({ ...body, lawyer_id: userId })
@@ -66,6 +80,22 @@ documentRequestsRouter.post('/', requireLawyer, async (req, res, next) => {
       .single()
 
     if (error) throw error
+
+    // Notify the client about the new document request
+    if (data && body.client_id) {
+      const { data: caseInfo } = await supabase
+        .from('cases')
+        .select('title')
+        .eq('id', body.case_id)
+        .single()
+
+      notifyClientDocumentRequest(
+        body.client_id,
+        body.title,
+        caseInfo?.title ?? 'your case',
+      ).catch(() => {/* non-critical */})
+    }
+
     res.status(201).json(data)
   } catch (err) {
     next(err)
@@ -129,6 +159,29 @@ documentRequestsRouter.patch('/client/:id/fulfil', requireClient, async (req, re
 
     if (error) throw error
     if (!data) { res.status(404).json({ error: 'Request not found' }); return }
+
+    // Notify advocate that the request was fulfilled
+    const { data: caseInfo } = await supabase
+      .from('cases')
+      .select('title, lawyer_id')
+      .eq('id', data.case_id)
+      .single()
+
+    if (caseInfo) {
+      const { data: clientProfile } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', userId)
+        .maybeSingle()
+
+      notifyAdvocateRequestFulfilled(
+        caseInfo.lawyer_id,
+        clientProfile?.full_name ?? 'Your client',
+        data.title,
+        data.case_id,
+      ).catch(() => {/* non-critical */})
+    }
+
     res.json(data)
   } catch (err) {
     next(err)

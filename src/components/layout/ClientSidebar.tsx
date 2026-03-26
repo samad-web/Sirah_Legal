@@ -5,6 +5,7 @@ import { LayoutGrid, Folder, LogOut, ChevronRight, Scale, Briefcase, Sun, Moon }
 import { useAuth } from '@/contexts/AuthContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { cn } from '@/lib/utils'
+import { NotificationBell } from '@/components/client/NotificationBell'
 
 const clientNavItems = [
   { to: '/client/dashboard', icon: <LayoutGrid size={18} />, label: 'Dashboard' },
@@ -32,7 +33,7 @@ export function ClientSidebar() {
       onMouseLeave={() => setExpanded(false)}
     >
       {/* Logo */}
-      <div className="flex items-center h-14 px-[20px] border-b border-border/70">
+      <div className="flex items-center h-14 px-[20px] border-b border-border/70 gap-2">
         <Scale size={22} className="text-gold shrink-0" />
         <AnimatePresence>
           {expanded && (
@@ -41,11 +42,23 @@ export function ClientSidebar() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -8 }}
               transition={{ duration: 0.15 }}
-              className="ml-3 text-foreground text-lg font-medium tracking-wide whitespace-nowrap"
+              className="flex-1 text-foreground text-lg font-medium tracking-wide whitespace-nowrap"
               style={{ fontFamily: 'Cormorant Garamond, serif' }}
             >
               LexDraft
             </motion.span>
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {expanded && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+            >
+              <NotificationBell />
+            </motion.div>
           )}
         </AnimatePresence>
       </div>
@@ -115,6 +128,7 @@ export function ClientSidebar() {
         {/* Theme toggle */}
         <button
           onClick={toggleTheme}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           className="w-full flex items-center h-9 px-[10px] text-muted hover:text-foreground hover:bg-surface-2 transition-all duration-150 border border-transparent"
         >
           {theme === 'dark'

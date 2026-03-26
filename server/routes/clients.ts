@@ -111,8 +111,8 @@ clientsRouter.post('/', clientWriteLimiter, async (req, res, next) => {
 
     if (profileError) {
       // Auth user was created but profile upsert failed — log for investigation
-      console.error(`[clients] profile upsert failed for userId=${newUserId}:`, profileError)
-      res.status(500).json({ error: `Profile setup failed: ${profileError.message}` })
+      console.error(`[clients] profile upsert failed for userId=${newUserId}:`, profileError.message)
+      res.status(500).json({ error: 'Failed to complete client profile setup' })
       return
     }
 
@@ -164,7 +164,7 @@ clientsRouter.post('/:id/reset-password', clientWriteLimiter, async (req, res, n
 
     console.log(`[audit] password reset triggered: lawyerId=${userId} clientId=${clientId} ip=${req.ip}`)
 
-    res.json({ success: true, email: authUser.user.email })
+    res.json({ success: true })
   } catch (err) {
     next(err)
   }

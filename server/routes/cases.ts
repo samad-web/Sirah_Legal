@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { supabase } from '../lib/supabase.js'
 import { requireAuth, requireLawyer } from '../middleware/auth.js'
 import type { AuthRequest } from '../middleware/auth.js'
+import { notifyClientCaseStatusChange } from '../services/notifications.js'
 
 export const casesRouter = Router()
 
@@ -105,6 +106,22 @@ casesRouter.patch('/:id', async (req, res, next) => {
         new_status: body.status,
         changed_by: userId,
       })
+
+      // Notify all assigned clients about the status change
+      const { data: assignments } = await supabase
+        .from('case_assignments')
+        .select('client_id')
+        .eq('case_id', id)
+
+      if (assignments) {
+        for (const a of assignments) {
+          notifyClientCaseStatusChange(
+            a.client_id,
+            data.title,
+            body.status,
+          ).catch(() => {/* non-critical */})
+        }
+      }
     }
 
     res.json(data)
@@ -179,6 +196,16 @@ casesRouter.post('/:id/clients/:clientId', async (req, res, next) => {
       .single()
 
     if (!caseRow) { res.status(404).json({ error: 'Case not found' }); return }
+
+    // Verify the client belongs to this lawyer (prevent cross-lawyer IDOR)
+    const { data: clientProfile } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', clientId)
+      .eq('created_by_lawyer_id', userId)
+      .single()
+
+    if (!clientProfile) { res.status(404).json({ error: 'Client not found' }); return }
 
     const { error } = await supabase
       .from('case_assignments')
